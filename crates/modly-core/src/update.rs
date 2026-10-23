@@ -168,9 +168,36 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    pub fn notes(&self, lang: &str) -> &str {
-        if lang == "ru" || self.notes_en.trim().is_empty() { &self.notes_ru } else { &self.notes_en }
+    /// «Что нового» для окна — простым текстом (см. [`plain_notes`]).
+    pub fn notes(&self, lang: &str) -> String {
+        plain_notes(if lang == "ru" || self.notes_en.trim().is_empty() { &self.notes_ru } else { &self.notes_en })
     }
+}
+
+/// Markdown из CHANGELOG — в простой текст: пункты «•», без `**` и обратных кавычек, перенос
+/// строки внутри пункта (строка с отступом) склеивается с предыдущей.
+pub fn plain_notes(md: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    for line in md.lines() {
+        let t = line.trim();
+        if t.is_empty() {
+            if out.last().is_some_and(|l| !l.is_empty()) {
+                out.push(String::new());
+            }
+            continue;
+        }
+        let clean = t.replace("**", "").replace('`', "");
+        if let Some(item) = clean.strip_prefix("- ").or_else(|| clean.strip_prefix("* ")) {
+            out.push(format!("• {item}"));
+        } else if line.starts_with(' ') && out.last().is_some_and(|l| !l.is_empty()) {
+            let last = out.last_mut().unwrap();
+            last.push(' ');
+            last.push_str(&clean);
+        } else {
+            out.push(clean);
+        }
+    }
+    out.join("\n").trim().to_owned()
 }
 
 pub fn hex(bytes: &[u8]) -> String {
@@ -476,6 +503,12 @@ mod tests {
         assert_eq!(label("1.0.0"), "1.0.0");
         assert_eq!(Channel::default_for("0.1.0-beta"), Channel::Beta);
         assert_eq!(Channel::default_for("1.0.0"), Channel::Stable);
+    }
+
+    #[test]
+    fn notes_become_plain_text() {
+        let md = "- **Установщик** `ModlySetup.exe`: ставит\n  без прав.\n- Второй пункт.\n\nПросто текст.";
+        assert_eq!(plain_notes(md), "• Установщик ModlySetup.exe: ставит без прав.\n• Второй пункт.\n\nПросто текст.");
     }
 
     fn signed(key: &SigningKey, m: &Manifest) -> (Vec<u8>, String) {

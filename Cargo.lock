@@ -2790,7 +2790,7 @@ dependencies = [
 
 [[package]]
 name = "modly-app"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "anyhow",
  "embed-resource",
@@ -2813,7 +2813,7 @@ dependencies = [
 
 [[package]]
 name = "modly-core"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "anyhow",
  "ed25519-dalek",
@@ -2831,7 +2831,7 @@ dependencies = [
 
 [[package]]
 name = "modly-protocol"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "serde",
  "serde_json",
@@ -2839,7 +2839,7 @@ dependencies = [
 
 [[package]]
 name = "modly-sdk"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "modly-protocol",
  "serde_json",
@@ -2848,7 +2848,7 @@ dependencies = [
 
 [[package]]
 name = "modly-setup"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "anyhow",
  "embed-resource",

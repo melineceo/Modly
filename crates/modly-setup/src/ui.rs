@@ -373,7 +373,12 @@ fn background(ui: &SetupWindow, work: impl FnOnce(&(dyn Fn(Report) + Sync)) -> R
     std::thread::spawn(move || {
         let w = weak.clone();
         let report = move |r: Report| {
+            // для разработки: MODLY_SETUP_DEMO — шаги идут медленно, чтобы рассмотреть окно
+            let slow = cfg!(debug_assertions) && matches!(r, Report::Step(_, "done")) && std::env::var_os("MODLY_SETUP_DEMO").is_some();
             let _ = w.upgrade_in_event_loop(move |ui| apply_report(&ui, r));
+            if slow {
+                std::thread::sleep(Duration::from_millis(1500));
+            }
         };
         let result = work(&report);
         if let Err(e) = &result {

@@ -3,6 +3,16 @@
 Формат: раздел `## <версия> — <дата>`, в нём `### Русский` и `### English`. Отсюда `cargo xtask dist`
 берёт текст выпуска на GitHub и в обновлении внутри Modly.
 
+## 0.2.1-beta — 2026-10-23
+
+### Русский
+- «Что нового» в обновлении — аккуратным текстом, без разметки.
+- Кольцо прогресса в установщике и обновляторе идёт от верха.
+
+### English
+- Update notes are shown as clean text, without markup.
+- The progress ring in the installer and updater starts at the top.
+
 ## 0.2.0-beta — 2026-10-23
 
 ### Русский

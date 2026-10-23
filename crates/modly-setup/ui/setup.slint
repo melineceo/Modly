@@ -203,13 +203,15 @@ component ProgressRing inherits Rectangle {
         border-radius: root.size / 2;
         drop-shadow-blur: 40px;
         drop-shadow-color: #8b5cf650;
-        background: Theme.surface-2;
+        background: Theme.surface-3;
     }
-    property <angle> sweep: max(root.progress, 0.001) * 360deg;
-    if !root.indeterminate: Rectangle {
+    property <angle> sweep: root.progress * 360deg;
+    if !root.indeterminate && root.progress > 0.004: Rectangle {
         width: root.size;
         height: root.size;
         border-radius: root.size / 2;
+        // у femtovg 0° конического градиента — справа; поворачиваем, чтобы кольцо шло от «12 часов»
+        transform-rotation: -90deg;
         background: @conic-gradient(#8b5cf6 0deg, #22d3ee root.sweep, Theme.surface-3 root.sweep, Theme.surface-3 360deg);
     }
     if root.indeterminate: Rectangle {
