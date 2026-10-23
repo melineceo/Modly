@@ -303,6 +303,8 @@ export global Store {
 
     // каталог сайта модов: idle | loading | ok | error
     in-out property <[SiteCard]> catalog;
+    // моды каталога для открытой игры, которых в ней ещё нет (на странице игры)
+    in-out property <[SiteCard]> game-site-mods;
     in-out property <string> catalog-state: "idle";
     in-out property <string> catalog-error;
     in-out property <string> catalog-search;

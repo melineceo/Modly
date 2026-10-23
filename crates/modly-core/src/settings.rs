@@ -35,6 +35,10 @@ pub struct Settings {
     pub update_channel: String,
     /// Не проверять обновления самому (по умолчанию Modly проверяет при запуске и раз в 6 часов).
     pub no_update_check: bool,
+    /// Игры не из Steam, которые человек убрал из библиотеки (id записи): поиск их не возвращает.
+    pub hidden_games: Vec<String>,
+    /// Какой версией поиска игр уже искали: новая версия поиска ищет ещё раз сама.
+    pub scan_version: u32,
 }
 
 impl Settings {

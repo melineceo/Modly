@@ -543,6 +543,155 @@ export component ModTile inherits Card {
 // ---------------------------------------------------------------------------------------------
 // Страница игры
 
+// Логотип мода — круг, как на сайте: картинка с сайта (круглой её уже сделал Modly — программный
+// рендерер не обрезает картинки по скруглению) или первая буква на цвете мода.
+export component ModLogo inherits Rectangle {
+    in property <string> letter;
+    in property <color> accent;
+    in property <image> logo;
+    in property <bool> has-logo;
+    in property <length> size: 56px;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: root.has-logo ? #0b0d14 : root.accent;
+    drop-shadow-blur: 18px;
+    drop-shadow-color: root.accent.transparentize(0.6);
+    if root.has-logo: Image {
+        width: root.size;
+        height: root.size;
+        source: root.logo;
+        image-fit: fill;
+    }
+    if !root.has-logo: Text {
+        text: root.letter;
+        color: #ffffff;
+        font-size: root.size * 0.42;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Мод из каталога для этой игры — строкой на её странице: поставить, не уходя в «Каталог».
+component SiteRow inherits Card {
+    in property <SiteCard> m;
+    property <string> slug: root.m.slug;
+    init => {
+        Store.catalog-art(root.slug, true);
+    }
+    changed slug => {
+        Store.catalog-art(root.slug, true);
+    }
+    VerticalLayout {
+        padding: 14px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                alignment: start;
+                ModLogo {
+                    letter: root.m.letter;
+                    accent: root.m.accent;
+                    logo: root.m.logo;
+                    has-logo: root.m.has-logo;
+                    size: 40px;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                spacing: 2px;
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: 8px;
+                    Text {
+                        text: root.m.title;
+                        color: Theme.text;
+                        font-size: 14px;
+                        font-weight: 600;
+                        overflow: elide;
+                    }
+                    if root.m.version != "": Text {
+                        text: "v" + root.m.version;
+                        color: Theme.text-3;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                }
+                if root.m.tagline != "": Text {
+                    text: root.m.tagline;
+                    color: Theme.text-3;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    overflow: elide;
+                    max-height: 32px;
+                }
+            }
+            VerticalLayout {
+                alignment: start;
+                IconBtn {
+                    icon: Icons.external;
+                    label: Lang.t("Страница мода", "Mod page");
+                    size: 32px;
+                    clicked => {
+                        Store.catalog-open(root.m.slug);
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            alignment: start;
+            padding-left: 52px;
+            if root.m.state == "busy": Btn {
+                text: (root.m.modly ? Lang.t("Устанавливаю… ", "Installing… ") : Lang.t("Скачиваю… ", "Downloading… ")) + round(root.m.progress * 100) + "%";
+                kind: "primary";
+                compact: true;
+                enabled: false;
+            }
+            if root.m.modly && (root.m.state == "none" || root.m.state == "outdated"): Btn {
+                text: root.m.state == "outdated" ? Lang.t("Обновить", "Update") : Lang.t("Установить", "Install");
+                icon: root.m.state == "outdated" ? Icons.refresh : Icons.download;
+                show-icon: true;
+                kind: "primary";
+                compact: true;
+                enabled: !Store.game.missing;
+                clicked => {
+                    Store.catalog-install(root.m.slug);
+                }
+            }
+            if !root.m.modly && root.m.downloadable && (root.m.state == "none" || root.m.state == "outdated"): Btn {
+                text: root.m.state == "outdated" ? Lang.t("Скачать новую", "Get the update") : Lang.t("Скачать", "Download");
+                icon: Icons.download;
+                show-icon: true;
+                compact: true;
+                clicked => {
+                    Store.catalog-download(root.m.slug);
+                }
+            }
+            if !root.m.modly && root.m.state == "downloaded": Btn {
+                text: Lang.t("Показать файл", "Show file");
+                icon: Icons.folder;
+                show-icon: true;
+                compact: true;
+                clicked => {
+                    Store.catalog-reveal(root.m.slug);
+                }
+            }
+            if !root.m.modly && !root.m.downloadable: Btn {
+                text: Lang.t("На сайте", "On the site");
+                icon: Icons.external;
+                show-icon: true;
+                kind: "outline";
+                compact: true;
+                clicked => {
+                    Store.catalog-open(root.m.slug);
+                }
+            }
+        }
+    }
+}
+
 component ModsColumn inherits VerticalLayout {
     alignment: start;
     spacing: 12px;
@@ -553,12 +702,20 @@ component ModsColumn inherits VerticalLayout {
     for m in Store.game-mods: ModTile {
         m: m;
     }
-    if Store.game-mods.length == 0: Card {
+    if Store.game-mods.length == 0 && Store.game-site-mods.length == 0: Card {
         EmptyState {
             icon: Icons.puzzle;
             title: Lang.t("Модов пока нет", "No mods yet");
             text: Lang.t("Найдите мод в «Каталоге» или сделайте свой — кнопка ниже.", "Find a mod in the Catalog or make your own — the button below.");
         }
+    }
+    // моды для этой игры из каталога, которых в ней ещё нет
+    if Store.game-site-mods.length > 0: SectionTitle {
+        text: Lang.t("В каталоге для этой игры", "In the catalog for this game");
+        hint: "" + Store.game-site-mods.length;
+    }
+    for m in Store.game-site-mods: SiteRow {
+        m: m;
     }
     // «Сделать мод» — как в WeMod, только мод свой: готовый проект с SDK для этой игры
     Card {
@@ -921,36 +1078,6 @@ component LikeBtn inherits Rectangle {
         clicked => {
             root.clicked();
         }
-    }
-}
-
-// Логотип мода — круг, как на сайте: картинка с сайта (круглой её уже сделал Modly — программный
-// рендерер не обрезает картинки по скруглению) или первая буква на цвете мода.
-export component ModLogo inherits Rectangle {
-    in property <string> letter;
-    in property <color> accent;
-    in property <image> logo;
-    in property <bool> has-logo;
-    in property <length> size: 56px;
-    width: root.size;
-    height: root.size;
-    border-radius: root.size / 2;
-    background: root.has-logo ? #0b0d14 : root.accent;
-    drop-shadow-blur: 18px;
-    drop-shadow-color: root.accent.transparentize(0.6);
-    if root.has-logo: Image {
-        width: root.size;
-        height: root.size;
-        source: root.logo;
-        image-fit: fill;
-    }
-    if !root.has-logo: Text {
-        text: root.letter;
-        color: #ffffff;
-        font-size: root.size * 0.42;
-        font-weight: 800;
-        horizontal-alignment: center;
-        vertical-alignment: center;
     }
 }
 

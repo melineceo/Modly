@@ -3,6 +3,27 @@
 Формат: раздел `## <версия> — <дата>`, в нём `### Русский` и `### English`. Отсюда `cargo xtask dist`
 берёт текст выпуска на GitHub и в обновлении внутри Modly.
 
+## 0.2.3-beta — 2026-10-23
+
+### Русский
+- **Игры находятся и без модов.** Раньше Modly искал игры только по пакетам модов и библиотекам Steam, а теперь
+  узнаёт и движок игры: Unity, Unreal, Godot, GameMaker и Ren'Py. После обновления Modly один раз поищет игры заново.
+- Игру не из Steam, убранную из библиотеки, новый поиск обратно не добавит. Если добавить её вручную, Modly снова
+  будет её находить.
+- На странице игры есть блок **«В каталоге для этой игры»**: моды с сайта, которых в этой игре ещё нет, ставятся
+  прямо отсюда.
+- Копия Modly с отдельной папкой данных (`MODLY_HOME`) запускается рядом с основной.
+
+### English
+- **Games are found without mods, too.** Modly used to find games only by mod packages and Steam libraries. Now
+  it also recognises the game engine: Unity, Unreal, Godot, GameMaker and Ren'Py. After the update Modly searches
+  for games once more.
+- A non-Steam game you removed from the library stays removed after a new search. If you add it by hand, Modly
+  finds it again.
+- A game's page has an **"In the catalog for this game"** block: mods from the site that this game doesn't have
+  yet install right from there.
+- A Modly copy with its own data folder (`MODLY_HOME`) starts next to the main one.
+
 ## 0.2.2-beta — 2026-10-23
 
 ### Русский

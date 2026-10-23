@@ -73,6 +73,9 @@ pub enum Engine {
     UnityMono,
     UnityIl2Cpp,
     Unreal,
+    Godot,
+    GameMaker,
+    RenPy,
     Unknown,
 }
 
@@ -82,6 +85,9 @@ impl Engine {
             Engine::UnityMono => "Unity · Mono",
             Engine::UnityIl2Cpp => "Unity · IL2CPP",
             Engine::Unreal => "Unreal Engine",
+            Engine::Godot => "Godot",
+            Engine::GameMaker => "GameMaker",
+            Engine::RenPy => "Ren'Py",
             Engine::Unknown => "",
         }
     }
@@ -100,7 +106,139 @@ pub fn detect_engine(dir: &Path, exe: &str) -> Engine {
     {
         return Engine::Unreal;
     }
+    let stem = exe.rsplit_once('.').map(|(s, _)| s).unwrap_or(exe);
+    if dir.join(format!("{stem}.pck")).is_file() {
+        return Engine::Godot;
+    }
+    if dir.join("data.win").is_file() {
+        return Engine::GameMaker;
+    }
+    if dir.join("renpy").is_dir() && dir.join("game").is_dir() {
+        return Engine::RenPy;
+    }
     Engine::Unknown
+}
+
+/// Служебный exe рядом с игрой: установщики, отчёты об ошибках, античиты, лаунчеры обновлений.
+pub fn is_helper_exe(file: &str) -> bool {
+    const HELPERS: &[&str] = &[
+        "unins", "setup", "redist", "vcredist", "vc_redist", "dxsetup", "crashhandler", "crashreport", "crashpad",
+        "easyanticheat", "eac_", "beservice", "battleye", "uninstall", "prereq", "dotnet", "directx", "physx",
+        "oalinst", "cefprocess", "helper", "update", "patcher", "dxwebsetup", "touchup", "cleanup", "installer", "downloader",
+    ];
+    let lower = file.to_lowercase();
+    HELPERS.iter().any(|h| lower.contains(h))
+}
+
+/// Игра, найденная по признакам движка, — без пакета мода.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Detected {
+    pub dir: PathBuf,
+    pub exe: String,
+    pub name: String,
+    pub engine: Engine,
+}
+
+/// Папка похожа на установленную игру: Unity (`<exe>_Data` с данными игры), Unreal
+/// (`<Игра>/Binaries/Win64/*-Shipping.exe` и папка `Engine`), Godot (`<exe>.pck`),
+/// GameMaker (`data.win`) или Ren'Py (`renpy` и `game`). `entries` — содержимое папки (имя, папка ли).
+pub fn detect_game_in(dir: &Path, entries: &[(String, bool)]) -> Option<Detected> {
+    let has_dir = |n: &str| entries.iter().any(|(e, d)| *d && e.eq_ignore_ascii_case(n));
+    let has_file = |n: &str| entries.iter().any(|(e, d)| !*d && e.eq_ignore_ascii_case(n));
+    let exes: Vec<&str> = entries
+        .iter()
+        .filter(|(e, d)| !*d && e.to_lowercase().ends_with(".exe") && !is_helper_exe(e))
+        .map(|(e, _)| e.as_str())
+        .collect();
+    let stem = |e: &str| e[..e.len() - 4].to_owned();
+    let found = |exe: &str, engine: Engine| {
+        let name = match engine {
+            Engine::UnityMono | Engine::UnityIl2Cpp => guess_name(dir, exe),
+            _ => pretty_name(dir, exe),
+        };
+        Some(Detected { dir: dir.to_path_buf(), exe: exe.to_owned(), name, engine })
+    };
+
+    // Unity: рядом с exe — папка <exe>_Data с данными игры
+    for exe in &exes {
+        let data_name = format!("{}_Data", stem(exe));
+        if has_dir(&data_name) {
+            let data = dir.join(&data_name);
+            if ["globalgamemanagers", "data.unity3d", "mainData"].iter().any(|f| data.join(f).is_file())
+                || data.join("Managed").is_dir()
+                || data.join("il2cpp_data").is_dir()
+            {
+                return found(exe, detect_engine(dir, exe));
+            }
+        }
+    }
+    // Unreal (собранная игра): папка Engine и <Игра>/Binaries/Win64/<...>-Shipping.exe
+    if has_dir("Engine") {
+        for (sub, is_dir) in entries {
+            if !*is_dir || sub.eq_ignore_ascii_case("Engine") {
+                continue;
+            }
+            let bin = dir.join(sub).join("Binaries").join("Win64");
+            let shipping = std::fs::read_dir(&bin).into_iter().flatten().flatten().any(|e| {
+                let n = e.file_name().to_string_lossy().to_lowercase();
+                n.ends_with(".exe") && n.contains("-shipping")
+            });
+            if shipping {
+                // запускают игру через exe в корне (<Игра>.exe), без него — сам Shipping (не лаунчер)
+                let root_exe = exes.iter().find(|e| stem(e).eq_ignore_ascii_case(sub)).map(|e| e.to_string());
+                let exe = root_exe.or_else(|| {
+                    std::fs::read_dir(&bin).ok()?.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).find(|n| {
+                        let l = n.to_lowercase();
+                        l.ends_with(".exe") && l.contains("-shipping")
+                    }).map(|n| format!("{sub}/Binaries/Win64/{n}"))
+                })?;
+                return found(&exe, Engine::Unreal);
+            }
+        }
+    }
+    // Godot: <exe>.pck рядом
+    for exe in &exes {
+        if has_file(&format!("{}.pck", stem(exe))) {
+            return found(exe, Engine::Godot);
+        }
+    }
+    // GameMaker и Ren'Py: главный exe — самый подходящий из папки
+    let main = || main_exe(dir, &dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+        .filter(|(d, _)| d == dir)
+        .map(|(_, e)| e);
+    if has_file("data.win") && !exes.is_empty() {
+        return found(&main()?, Engine::GameMaker);
+    }
+    if has_dir("renpy") && has_dir("game") && !exes.is_empty() {
+        return found(&main()?, Engine::RenPy);
+    }
+    None
+}
+
+/// Название игры не из Unity: имя папки, если оно похоже на название (`Hello Neighbor`), иначе — exe,
+/// разбитый по словам (`HelloNeighbor.exe` → «Hello Neighbor»).
+pub fn pretty_name(dir: &Path, exe: &str) -> String {
+    let folder = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    if folder.contains(' ') && !folder.contains('_') && folder.chars().any(char::is_alphabetic) {
+        return folder;
+    }
+    let stem = Path::new(exe).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = stem.split("-Win64").next().unwrap_or(&stem).to_owned();
+    let mut out = String::new();
+    let chars: Vec<char> = stem.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
+        if c == '_' || c == '-' {
+            out.push(' ');
+            continue;
+        }
+        let prev = if i > 0 { chars[i - 1] } else { ' ' };
+        if i > 0 && c.is_uppercase() && (prev.is_lowercase() || prev.is_ascii_digit()) {
+            out.push(' ');
+        }
+        out.push(c);
+    }
+    let out = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    if out.is_empty() { folder } else { out }
 }
 
 /// Название игры для папки без пакета модов: из `app.info` Unity (вторая строка — продукт)
@@ -367,11 +505,6 @@ fn acf_value(text: &str, key: &str) -> Option<String> {
 /// Служебные exe (установщики, отчёты об ошибках, античиты) не подходят. Возвращает (папка, имя exe):
 /// если в корне игры подходящего exe нет — ищет на уровень глубже (`bin`, `Game` и т.п.).
 pub fn main_exe(dir: &Path, name: &str) -> Option<(PathBuf, String)> {
-    const HELPERS: &[&str] = &[
-        "unins", "setup", "redist", "vcredist", "vc_redist", "dxsetup", "crashhandler", "crashreport", "crashpad",
-        "easyanticheat", "eac_", "beservice", "battleye", "uninstall", "prereq", "dotnet", "directx", "physx",
-        "oalinst", "cefprocess", "helper", "update", "patcher", "dxwebsetup", "touchup", "cleanup", "installer", "downloader",
-    ];
     let norm = |s: &str| s.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect::<String>();
     let want_dir = norm(&dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
     let want_name = norm(name);
@@ -380,7 +513,7 @@ pub fn main_exe(dir: &Path, name: &str) -> Option<(PathBuf, String)> {
         for e in std::fs::read_dir(folder).ok()?.flatten() {
             let file = e.file_name().to_string_lossy().into_owned();
             let lower = file.to_lowercase();
-            if !lower.ends_with(".exe") || HELPERS.iter().any(|h| lower.contains(h)) {
+            if !lower.ends_with(".exe") || is_helper_exe(&file) {
                 continue;
             }
             let size = e.metadata().map(|m| m.len()).unwrap_or(0);
@@ -458,10 +591,14 @@ const SKIP_DIRS: &[&str] = &[
 
 /// Обойти папки и найти игры из `defs`. Возвращает (индекс описания, папка игры).
 pub fn scan(defs: &[GameDef], roots: &[(PathBuf, usize)]) -> Vec<(usize, PathBuf)> {
+    scan_all(defs, roots).0
+}
+
+/// Обойти папки: игры из `defs` (пакеты модов) и любые другие игры по признакам движка
+/// ([`detect_game_in`]). В найденную по движку игру поиск не заходит — внутри только её файлы.
+pub fn scan_all(defs: &[GameDef], roots: &[(PathBuf, usize)]) -> (Vec<(usize, PathBuf)>, Vec<Detected>) {
     let mut found: Vec<(usize, PathBuf)> = Vec::new();
-    if defs.is_empty() {
-        return found;
-    }
+    let mut detected: Vec<Detected> = Vec::new();
     let mut queue: VecDeque<(PathBuf, usize)> = roots.iter().cloned().collect();
     let mut visited = 0usize;
     while let Some((dir, depth)) = queue.pop_front() {
@@ -469,28 +606,42 @@ pub fn scan(defs: &[GameDef], roots: &[(PathBuf, usize)]) -> Vec<(usize, PathBuf
         if visited > 60_000 {
             break;
         }
+        let mut by_def = false;
         for (i, def) in defs.iter().enumerate() {
             if matches_def(&dir, def) && !found.iter().any(|(_, d)| d == &dir) {
                 found.push((i, dir.clone()));
+                by_def = true;
+            }
+        }
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let entries: Vec<(String, bool)> = rd
+            .flatten()
+            .take(2000)
+            .filter_map(|e| {
+                let ft = e.file_type().ok()?;
+                (!ft.is_symlink()).then(|| (e.file_name().to_string_lossy().into_owned(), ft.is_dir()))
+            })
+            .collect();
+        if !by_def {
+            if let Some(game) = detect_game_in(&dir, &entries) {
+                if !detected.iter().any(|d| d.dir == game.dir) {
+                    detected.push(game);
+                }
+                continue;
             }
         }
         if depth == 0 {
             continue;
         }
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
-        for entry in rd.flatten() {
-            let Ok(ft) = entry.file_type() else { continue };
-            if !ft.is_dir() || ft.is_symlink() {
+        for (name, is_dir) in &entries {
+            let lower = name.to_lowercase();
+            if !*is_dir || SKIP_DIRS.contains(&lower.as_str()) || lower.ends_with("_data") || lower.starts_with('.') {
                 continue;
             }
-            let name = entry.file_name().to_string_lossy().to_lowercase();
-            if SKIP_DIRS.contains(&name.as_str()) || name.ends_with("_data") || name.starts_with('.') {
-                continue;
-            }
-            queue.push_back((entry.path(), depth - 1));
+            queue.push_back((dir.join(name), depth - 1));
         }
     }
-    found
+    (found, detected)
 }
 
 #[cfg(test)]
@@ -577,6 +728,13 @@ mod tests {
         lib.link_defs(&[steam]);
         assert!(lib.games[0].has_def("ft-steam"));
 
+        // без пакета мода игра находится по движку
+        let (by_def, by_engine) = scan_all(&[], &[(root.path().to_path_buf(), 3)]);
+        assert!(by_def.is_empty());
+        assert_eq!(by_engine.len(), 1);
+        assert_eq!((by_engine[0].dir.clone(), by_engine[0].exe.as_str(), by_engine[0].name.as_str()), (game.clone(), "FamilyTime.exe", "Family Time"));
+        assert_eq!(by_engine[0].engine, Engine::UnityMono);
+
         // сборка: по умолчанию у Unity Mono — Assembly-CSharp.dll
         let file = build_file(&lib.games[0], &def());
         assert_eq!(file, game.join("FamilyTime_Data/Managed/Assembly-CSharp.dll"));
@@ -585,7 +743,81 @@ mod tests {
 }
 
 #[cfg(test)]
+mod engine_tests {
+    use super::*;
+
+    fn touch(p: &Path) {
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, b"MZ").unwrap();
+    }
+
+    #[test]
+    fn finds_games_by_engine_and_skips_tools() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        // Unreal: Engine + <Игра>/Binaries/Win64/*-Shipping.exe, запуск через exe в корне
+        touch(&r.join("Hello Neighbor/HelloNeighbor.exe"));
+        touch(&r.join("Hello Neighbor/HelloNeighbor/Binaries/Win64/HelloNeighbor-Win64-Shipping.exe"));
+        std::fs::create_dir_all(r.join("Hello Neighbor/Engine/Binaries")).unwrap();
+        // Godot, GameMaker, Ren'Py
+        touch(&r.join("Brotato/Brotato.exe"));
+        touch(&r.join("Brotato/Brotato.pck"));
+        touch(&r.join("gm_game/RiskOfRain.exe"));
+        touch(&r.join("gm_game/data.win"));
+        touch(&r.join("DDLC/DDLC.exe"));
+        std::fs::create_dir_all(r.join("DDLC/renpy")).unwrap();
+        std::fs::create_dir_all(r.join("DDLC/game")).unwrap();
+        // не игры: лаунчер Epic (без *-Shipping), редактор Unreal, Unity без данных игры, просто exe
+        touch(&r.join("Epic Games/Launcher/Portal/Binaries/Win64/EpicGamesLauncher.exe"));
+        std::fs::create_dir_all(r.join("Epic Games/Launcher/Engine/Binaries")).unwrap();
+        touch(&r.join("Epic Games/UE_5.3/Engine/Binaries/Win64/UnrealEditor.exe"));
+        touch(&r.join("Tool/Tool.exe"));
+        std::fs::create_dir_all(r.join("Tool/Tool_Data")).unwrap();
+        touch(&r.join("Apps/notepad2.exe"));
+
+        let (_, mut found) = scan_all(&[], &[(r.to_path_buf(), 3)]);
+        found.sort_by(|a, b| a.dir.cmp(&b.dir));
+        let got: Vec<(String, String, Engine)> = found
+            .iter()
+            .map(|d| (d.dir.file_name().unwrap().to_string_lossy().into_owned(), d.exe.clone(), d.engine))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("Brotato".into(), "Brotato.exe".into(), Engine::Godot),
+                ("DDLC".into(), "DDLC.exe".into(), Engine::RenPy),
+                ("Hello Neighbor".into(), "HelloNeighbor.exe".into(), Engine::Unreal),
+                ("gm_game".into(), "RiskOfRain.exe".into(), Engine::GameMaker),
+            ]
+        );
+        assert_eq!(found.iter().find(|d| d.engine == Engine::Unreal).unwrap().name, "Hello Neighbor");
+        assert_eq!(found.iter().find(|d| d.engine == Engine::GameMaker).unwrap().name, "Risk Of Rain");
+    }
+
+    #[test]
+    fn pretty_names() {
+        assert_eq!(pretty_name(Path::new(r"C:\Games\Garry's Mod"), "hl2.exe"), "Garry's Mod");
+        assert_eq!(pretty_name(Path::new(r"C:\Games\Family_Time_Ep_3_b108"), "FamilyTime.exe"), "Family Time");
+        assert_eq!(pretty_name(Path::new(r"C:\x\HN"), "HelloNeighbor/Binaries/Win64/HelloNeighbor-Win64-Shipping.exe"), "Hello Neighbor");
+        assert_eq!(pretty_name(Path::new(r"C:\x\k93"), "Kuindzhi93.exe"), "Kuindzhi93");
+    }
+}
+
+#[cfg(test)]
 mod local_check {
+    /// Ручная проверка на этом ПК: какие игры найдутся по движку —
+    /// `cargo test -p modly-core local_engines -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn local_engines() {
+        let started = std::time::Instant::now();
+        let (_, found) = super::scan_all(&[], &super::default_roots());
+        for d in &found {
+            println!("{:<16} {:<36} {}  [{}]", d.engine.label(), d.name, d.dir.display(), d.exe);
+        }
+        println!("{} games in {:?}", found.len(), started.elapsed());
+    }
+
     /// Ручная проверка на этом ПК: `cargo test -p modly-core local_steam -- --ignored --nocapture`.
     #[test]
     #[ignore]

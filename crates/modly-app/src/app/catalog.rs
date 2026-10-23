@@ -52,6 +52,10 @@ pub struct CatalogState {
     /// Мод из ссылки modly://, которую ждёт подтверждение.
     confirm: Option<SiteMod>,
     model: Rc<VecModel<SiteCard>>,
+    /// Моды каталога для открытой игры (на её странице).
+    game_model: Rc<VecModel<SiteCard>>,
+    /// Каталог уже пробовали загрузить сами, для страницы игры (без сети — не повторять).
+    auto_loaded: bool,
     /// Логотипы и обложки — уменьшенные, в физических пикселях при масштабе `art_scale`.
     art: HashMap<ArtKey, Art>,
     /// Очередь загрузки картинок — в порядке появления карточек на экране.
@@ -149,6 +153,7 @@ impl App {
         if let Some(ui) = self.ui() {
             let store = ui.global::<Store>();
             store.set_catalog(ModelRc::from(self.cat.model.clone()));
+            store.set_game_site_mods(ModelRc::from(self.cat.game_model.clone()));
             store.set_site_host(site::site_host().into());
         }
         self.cat.downloads = site::site_downloads();
@@ -266,20 +271,34 @@ impl App {
         self.catalog_cards();
     }
 
-    /// Копия игры мода в библиотеке: по номеру в Steam, по описанию игры из пакета (`game.id` —
-    /// с тем, как его понимают моды на этом ПК), по названию или по exe (кроме общих вроде `Game.exe`).
+    /// Копия игры мода в библиотеке.
     fn owned_game(&self, m: &SiteMod) -> Option<&Game> {
-        const GENERIC_EXE: &[&str] = &["game.exe", "launcher.exe", "start.exe", "play.exe", "client.exe"];
-        let info = &m.game_info;
-        let key = site::game_key(&m.game);
-        let exe = info.exe.to_lowercase();
-        self.library.games.iter().find(|g| {
-            let hit = (info.steam_appid.is_some() && info.steam_appid == g.steam_appid)
-                || (!info.id.is_empty() && g.has_def(&info.id))
-                || (!key.is_empty() && site::game_key(&g.name) == key)
-                || (!exe.is_empty() && !GENERIC_EXE.contains(&exe.as_str()) && g.exe.to_lowercase() == exe);
-            hit && g.exists()
-        })
+        self.library.games.iter().find(|g| game_fits(g, m) && g.exists())
+    }
+
+    /// Открыли игру: моды каталога для неё, которых в ней ещё нет, — под её модами. Каталог
+    /// подгружается сам, если его ещё не открывали.
+    pub(super) fn catalog_for_game(&mut self) {
+        if !self.cat.loaded && !self.cat.loading && !self.cat.auto_loaded {
+            self.cat.auto_loaded = true;
+            self.catalog_refresh();
+        }
+        let cards: Vec<SiteCard> = match self.current() {
+            Some(g) => {
+                // мод уже есть у игры (поставлен или лежит у разработчика) — он в списке выше
+                let local: HashSet<String> = self.mods_for(&g).into_iter().map(|m| m.id).collect();
+                self.cat
+                    .mods
+                    .iter()
+                    .filter(|m| game_fits(&g, m))
+                    .map(|m| (m, self.site_card(m)))
+                    .filter(|(m, c)| c.state == "outdated" || (c.state != "installed" && !local.contains(&m.slug)))
+                    .map(|(_, c)| c)
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        self.cat.game_model.set_vec(cards);
     }
 
     fn site_card(&self, m: &SiteMod) -> SiteCard {
@@ -347,6 +366,14 @@ impl App {
         // сначала моды для игр, которые у игрока есть; порядок сайта внутри групп сохраняется
         cards.sort_by_key(|c| !c.owned);
         self.cat.model.set_vec(cards);
+        self.game_cards_update();
+    }
+
+    /// Карточки модов каталога на странице игры — без новой загрузки каталога.
+    fn game_cards_update(&mut self) {
+        if self.cat.loaded {
+            self.catalog_for_game();
+        }
     }
 
     /// Обновить одну карточку (прогресс установки, лайк) без пересборки всего списка.
@@ -354,10 +381,12 @@ impl App {
         let Some(m) = self.cat.mods.iter().find(|m| m.slug == slug).cloned() else { return };
         let card = self.site_card(&m);
         use slint::Model;
-        for i in 0..self.cat.model.row_count() {
-            if self.cat.model.row_data(i).is_some_and(|c| c.slug == slug) {
-                self.cat.model.set_row_data(i, card);
-                break;
+        for model in [&self.cat.model, &self.cat.game_model] {
+            for i in 0..model.row_count() {
+                if model.row_data(i).is_some_and(|c| c.slug == slug) {
+                    model.set_row_data(i, card.clone());
+                    break;
+                }
             }
         }
     }
@@ -797,6 +826,19 @@ impl App {
             ui.global::<Store>().set_confirm_open(false);
         }
     }
+}
+
+/// Мод `m` — для игры `g`: по номеру в Steam, по описанию игры из пакета (`game.id` — с тем, как
+/// его понимают моды на этом ПК), по названию или по exe (кроме общих вроде `Game.exe`).
+fn game_fits(g: &Game, m: &SiteMod) -> bool {
+    const GENERIC_EXE: &[&str] = &["game.exe", "launcher.exe", "start.exe", "play.exe", "client.exe"];
+    let info = &m.game_info;
+    let key = site::game_key(&m.game);
+    let exe = info.exe.to_lowercase();
+    (info.steam_appid.is_some() && info.steam_appid == g.steam_appid)
+        || (!info.id.is_empty() && g.has_def(&info.id))
+        || (!key.is_empty() && site::game_key(&g.name) == key)
+        || (!exe.is_empty() && !GENERIC_EXE.contains(&exe.as_str()) && g.exe.to_lowercase() == exe)
 }
 
 /// Прогресс скачивания из фонового потока — в карточку, не чаще шага в 1 %.

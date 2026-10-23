@@ -254,8 +254,13 @@ pub fn focus_window(title: &str) {
 pub fn acquire_single_instance() -> bool {
     use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
     use windows::Win32::System::Threading::CreateMutexW;
+    // копия с отдельной папкой данных (MODLY_HOME, проверки) не мешает основному Modly
+    let name = match std::env::var("MODLY_HOME") {
+        Ok(home) if !home.is_empty() => format!("Local\\Modly.SingleInstance.{}", crate::stable_id(&home)),
+        _ => "Local\\Modly.SingleInstance".to_owned(),
+    };
     unsafe {
-        match CreateMutexW(None, true, w!("Local\\Modly.SingleInstance")) {
+        match CreateMutexW(None, true, &HSTRING::from(name)) {
             Ok(handle) => {
                 if GetLastError() == ERROR_ALREADY_EXISTS {
                     let _ = CloseHandle(handle);

@@ -41,6 +41,8 @@ pub fn version_label() -> String {
 }
 
 const MAX_LOG: usize = 400;
+/// Версия поиска игр: 2 — игры находятся и без пакетов модов, по признакам движка.
+const SCAN_VERSION: u32 = 2;
 /// Сколько ждать второго нажатия клавиши у кнопки с подтверждением (как у кнопки в панели).
 const CONFIRM_WINDOW: Duration = Duration::from_secs(3);
 
@@ -218,7 +220,8 @@ pub fn init(ui: &AppWindow, rt: tokio::runtime::Handle) {
     catalog::start_open_listener(&rt);
     app.hub.set_trace(app.settings.developer_mode);
 
-    let first_scan = !app.settings.first_scan_done;
+    // первый запуск или поиск игр стал умнее — поискать ещё раз
+    let first_scan = !app.settings.first_scan_done || app.settings.scan_version < SCAN_VERSION;
     let last = app.settings.last_game.clone();
     APP.with(|cell| *cell.borrow_mut() = Some(app));
 
@@ -665,6 +668,7 @@ impl App {
             ui.global::<Store>().set_game(card);
         }
         self.refresh_game_maps(&game);
+        self.catalog_for_game();
         self.rebuild_live();
     }
 
@@ -730,6 +734,11 @@ impl App {
     fn remove_game(&mut self, id: &str) {
         if let Some(g) = self.library.get(id).cloned() {
             self.hide_steam(&g);
+            // игру не из Steam поиск по движку тоже не вернёт
+            if g.steam_appid.is_none() && !self.settings.hidden_games.iter().any(|h| h == id) {
+                self.settings.hidden_games.push(id.to_owned());
+                self.settings.save();
+            }
         }
         self.library.remove(id);
         self.library.save();
@@ -747,6 +756,11 @@ impl App {
             Some(game) => {
                 let id = game.id.clone();
                 let name = game.name.clone();
+                // добавили сами — значит, больше не скрыта
+                if self.settings.hidden_games.iter().any(|h| *h == id) {
+                    self.settings.hidden_games.retain(|h| *h != id);
+                    self.settings.save();
+                }
                 if self.library.add(game) {
                     self.relink_games();
                     self.library.save();
@@ -807,24 +821,54 @@ impl App {
         }
         std::thread::spawn(move || {
             let started = Instant::now();
-            let found: Vec<(manifest::GameDef, PathBuf)> =
-                library::scan(&defs, &roots).into_iter().map(|(i, dir)| (defs[i].clone(), dir)).collect();
+            let (by_def, detected) = library::scan_all(&defs, &roots);
+            let found: Vec<(manifest::GameDef, PathBuf)> = by_def.into_iter().map(|(i, dir)| (defs[i].clone(), dir)).collect();
             let steam = games::steam_scan();
-            log::info!("scan: {} games + {} Steam in {:?}", found.len(), steam.len(), started.elapsed());
-            post(move |a| a.on_scan_done(found, steam, first));
+            log::info!(
+                "scan: {} by mod packages, {} by engine, {} Steam in {:?}",
+                found.len(),
+                detected.len(),
+                steam.len(),
+                started.elapsed()
+            );
+            post(move |a| a.on_scan_done(found, detected, steam, first));
         });
     }
 
-    fn on_scan_done(&mut self, found: Vec<(manifest::GameDef, PathBuf)>, steam: Vec<games::SteamFound>, first: bool) {
+    fn on_scan_done(
+        &mut self,
+        found: Vec<(manifest::GameDef, PathBuf)>,
+        detected: Vec<library::Detected>,
+        steam: Vec<games::SteamFound>,
+        first: bool,
+    ) {
+        // папки игр Steam — за поиском Steam (он помнит, кого человек убрал из библиотеки)
+        let steam_dirs: Vec<String> = steam.iter().map(|(app, _, _)| app.dir.to_string_lossy().to_lowercase()).collect();
         let mut added = self.add_steam_games(steam);
         for (def, dir) in found {
+            if self.settings.hidden_games.contains(&library::game_id(&dir)) {
+                continue;
+            }
             if self.library.add(Game::new(&dir, &def.exe, &def.name, Some(def.id.clone()), false)) {
+                added += 1;
+            }
+        }
+        for d in detected {
+            let lower = d.dir.to_string_lossy().to_lowercase();
+            if steam_dirs.iter().any(|s| lower == *s || lower.starts_with(&format!("{s}\\"))) {
+                continue;
+            }
+            if self.settings.hidden_games.contains(&library::game_id(&d.dir)) {
+                continue;
+            }
+            if self.library.add(Game::new(&d.dir, &d.exe, &d.name, None, false)) {
                 added += 1;
             }
         }
         self.relink_games();
         self.library.save();
         self.settings.first_scan_done = true;
+        self.settings.scan_version = SCAN_VERSION;
         self.settings.save();
         if let Some(ui) = self.ui() {
             ui.global::<Store>().set_scanning(false);
