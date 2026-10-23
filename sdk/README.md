@@ -10,6 +10,7 @@
 | **C++** | [`cpp/modly.hpp`](cpp/modly.hpp) | Unreal Engine (UE4SS), инжектируемые DLL, свои движки |
 | **Rust** | [`rust`](rust) (крейт `modly-sdk`) | моды и инструменты на Rust |
 | другой язык | [`docs/PROTOCOL.md`](../docs/PROTOCOL.md) | протокол: строки JSON по именованному каналу |
+| **C++, обновления** | [`cpp/modly_update.hpp`](cpp/modly_update.hpp) | мод сам обновляется с mods.hackerstone.xyz: одобренные выпуски, SHA-256 и подпись автора — [docs/MOD-UPDATES.md](../docs/MOD-UPDATES.md) |
 
 Все три SDK устроены одинаково: **значения привязываются к данным мода** (геттер + сеттер или указатель),
 SDK сам рассылает изменившиеся значения и вызывает сеттеры, когда пользователь что-то меняет в Modly.

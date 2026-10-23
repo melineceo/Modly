@@ -14,3 +14,6 @@ sha2 = "0.10"
 zip = { version = "4", default-features = false, features = ["deflate-flate2"] }
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 getrandom = "0.3"
+# подпись выпусков модов: RSA (её проверяют и C++, и C# моды средствами Windows/.NET)
+rsa = { version = "0.9", features = ["sha2", "pem"] }
+rand = "0.8"

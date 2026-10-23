@@ -23,11 +23,85 @@ fn main() -> Result<()> {
         Some("keygen") => keygen(flag("--force")),
         Some("dist") => dist(flag("--publish")),
         Some("sign") => sign_file(Path::new(args.get(1).context("cargo xtask sign <файл>")?)),
+        Some("mod-keygen") => mod_keygen(flag("--force")),
+        Some("mod-sign") => {
+            let value = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
+            mod_sign(Path::new(args.get(1).context("cargo xtask mod-sign <архив мода> [--slug <адрес>] [--version <версия>]")?), value("--slug"), value("--version"))
+        }
         _ => {
-            eprintln!("cargo xtask keygen [--force] | dist [--publish] | sign <file>");
+            eprintln!("cargo xtask keygen [--force] | dist [--publish] | sign <file> | mod-keygen [--force] | mod-sign <zip> [--slug s] [--version v]");
             std::process::exit(2);
         }
     }
+}
+
+// ------------------------------------------------------------- выпуски модов ---
+//
+// Мод с modly_update.hpp (sdk/cpp) ставит обновление, только если рядом с архивом на сайте лежит
+// подпись автора `<архив>.sig`: RSA PKCS#1 v1.5 / SHA-256 строки
+// "modly-mod-release\n<адрес>\n<версия>\n<sha256>\n". Ключ автора — один на все его моды:
+// `%USERPROFILE%\.modly\mods-signing-key.pem` (или путь в `MODLY_MODS_KEY`).
+
+fn mods_key_path() -> PathBuf {
+    if let Some(p) = std::env::var_os("MODLY_MODS_KEY") {
+        return PathBuf::from(p);
+    }
+    key_path().with_file_name("mods-signing-key.pem")
+}
+
+fn mod_keygen(force: bool) -> Result<()> {
+    use rsa::pkcs8::{EncodePrivateKey, LineEnding};
+    use rsa::traits::PublicKeyParts;
+    let p = mods_key_path();
+    if p.exists() && !force {
+        bail!("ключ автора модов уже есть: {}\nНовый — только с --force: моды со старым открытым ключом перестанут принимать обновления.", p.display());
+    }
+    println!("Создаю ключ RSA-3072 (несколько секунд)…");
+    let key = rsa::RsaPrivateKey::new(&mut rand::rngs::OsRng, 3072)?;
+    std::fs::create_dir_all(p.parent().unwrap())?;
+    std::fs::write(&p, key.to_pkcs8_pem(LineEnding::LF)?.as_bytes())?;
+    let n = update::hex(&key.n().to_bytes_be());
+    let e = update::hex(&key.e().to_bytes_be());
+    let public = format!(
+        "# Открытый ключ автора модов Hackerstone (RSA-3072). Его вшивают моды с modly_update.hpp.\nmodulus = {n}\nexponent = {e}\n"
+    );
+    std::fs::write(p.with_extension("pub.txt"), &public)?;
+    println!("Закрытый ключ: {} — сохраните резервную копию, никому не передавайте.", p.display());
+    println!("Открытый ключ для мода (C++):\nconstexpr const char* kAuthorKeyN = \"{n}\";\nconstexpr const char* kAuthorKeyE = \"{e}\";");
+    Ok(())
+}
+
+/// id и версия мода из modly.json внутри архива.
+fn zip_manifest(zip_path: &Path) -> Result<(String, String)> {
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(zip_path)?)?;
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("modly.json").context("в архиве нет modly.json")?, &mut text)?;
+    let v: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}'))?;
+    let field = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_owned();
+    Ok((field("id"), field("version")))
+}
+
+fn mod_sign(zip_path: &Path, slug: Option<String>, version: Option<String>) -> Result<()> {
+    use rsa::pkcs1v15::{SigningKey, VerifyingKey};
+    use rsa::pkcs8::DecodePrivateKey;
+    use rsa::signature::{SignatureEncoding, Signer, Verifier};
+    let pem = std::fs::read_to_string(mods_key_path()).with_context(|| format!("ключ {} — создайте: cargo xtask mod-keygen", mods_key_path().display()))?;
+    let key = rsa::RsaPrivateKey::from_pkcs8_pem(&pem)?;
+    let (id, ver) = zip_manifest(zip_path)?;
+    let slug = slug.unwrap_or(id);
+    let version = version.unwrap_or(ver);
+    if slug.is_empty() || update::Version::parse(&version).is_none() {
+        bail!("нужны адрес мода и версия (modly.json: id и version, или --slug и --version)");
+    }
+    let sha = update::file_sha256(zip_path)?;
+    let message = format!("modly-mod-release\n{slug}\n{version}\n{sha}\n");
+    let signer = SigningKey::<sha2::Sha256>::new(key.clone());
+    let sig = signer.sign(message.as_bytes());
+    VerifyingKey::<sha2::Sha256>::new(key.to_public_key()).verify(message.as_bytes(), &sig).context("подпись не прошла проверку")?;
+    let out = PathBuf::from(format!("{}.sig", zip_path.display()));
+    std::fs::write(&out, format!("{}\n", update::hex(&sig.to_bytes())))?;
+    println!("{} — {slug} {version}, sha256 {sha}", out.display());
+    Ok(())
 }
 
 fn root() -> PathBuf {
