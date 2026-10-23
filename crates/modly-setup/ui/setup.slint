@@ -1,0 +1,1392 @@
+// Установщик, обновлятор и удаление Modly — одно окно в стиле самого Modly.
+// mode: install | uninstall | update. Страницы:
+//   install   — welcome → progress → done | error
+//   uninstall — confirm → progress → done | error
+//   update    — check → available | uptodate → progress → done | error
+
+import { Theme, Lang } from "../../modly-app/ui/theme.slint";
+import { Icons } from "../../modly-app/ui/icons.slint";
+import { Btn, IconBtn, Toggle, Icon } from "../../modly-app/ui/widgets.slint";
+import { AboutSlint, ScrollView } from "std-widgets.slint";
+
+export { Lang }
+
+export struct StepItem {
+    title: string,
+    // done | active | pending | error
+    state: string,
+}
+
+export struct ToolItem {
+    id: string,
+    title: string,
+    text: string,
+    present: bool,
+    selected: bool,
+}
+
+global Brand {
+    out property <color> violet: #8b5cf6;
+    out property <color> indigo: #6d6af7;
+    out property <color> cyan: #22d3ee;
+    out property <brush> gradient: @linear-gradient(110deg, #8b5cf6 0%, #6d6af7 48%, #22d3ee 100%);
+    out property <brush> text-gradient: @linear-gradient(90deg, #ddd6fe 0%, #c4b5fd 35%, #67e8f9 100%);
+}
+
+// ---------------------------------------------------------------- детали ---
+
+// Мягкие пятна света, которые медленно плывут по фону.
+component Aurora inherits Rectangle {
+    in property <float> t;
+    clip: true;
+    background: Theme.bg;
+    Rectangle {
+        width: 620px;
+        height: 620px;
+        x: -200px + 60px * sin(root.t * 9deg);
+        y: -300px + 50px * cos(root.t * 7deg);
+        background: @radial-gradient(circle, #8b5cf65c 0%, #8b5cf622 38%, #8b5cf600 70%);
+    }
+    Rectangle {
+        width: 560px;
+        height: 560px;
+        x: root.width - 330px + 70px * cos(root.t * 6deg);
+        y: root.height - 300px + 40px * sin(root.t * 8deg);
+        background: @radial-gradient(circle, #22d3ee40 0%, #22d3ee18 40%, #22d3ee00 70%);
+    }
+    Rectangle {
+        width: 420px;
+        height: 420px;
+        x: root.width * 0.45 + 90px * sin(root.t * 5deg + 40deg);
+        y: -180px + 60px * sin(root.t * 4deg);
+        background: @radial-gradient(circle, #ec489926 0%, #ec48990c 45%, #ec489900 70%);
+    }
+    // тонкая светлая линия по верхнему краю
+    Rectangle {
+        y: 0;
+        height: 1px;
+        background: @linear-gradient(90deg, #ffffff00 0%, #ffffff22 50%, #ffffff00 100%);
+    }
+}
+
+// Главная кнопка: градиент, свечение и блик, который пробегает по ней.
+component GlowButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> show-icon: false;
+    in property <bool> enabled: true;
+    in property <bool> danger: false;
+    in property <float> t;
+    callback clicked();
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        root.clicked();
+    }
+    height: 48px;
+    min-width: 170px;
+    horizontal-stretch: 0;
+    border-radius: 13px;
+    opacity: root.enabled ? 1 : 0.45;
+    background: root.danger ? @linear-gradient(110deg, #ef4444 0%, #dc2626 60%, #f97316 100%) : Brand.gradient;
+    drop-shadow-blur: ta.has-hover && root.enabled ? 30px : 22px;
+    drop-shadow-color: root.danger ? #ef444466 : #8b5cf670;
+    drop-shadow-offset-y: 6px;
+    animate drop-shadow-blur { duration: 200ms; }
+    clip: true;
+
+    // блик
+    Rectangle {
+        width: 70px;
+        height: parent.height * 2;
+        y: -parent.height / 2;
+        x: -120px + mod(root.t * 0.35, 3.2) * (parent.width + 240px) / 3.2;
+        transform-rotation: 20deg;
+        background: @linear-gradient(90deg, #ffffff00 0%, #ffffff30 50%, #ffffff00 100%);
+        opacity: root.enabled ? 1 : 0;
+    }
+    Rectangle {
+        border-radius: root.border-radius;
+        background: #ffffff;
+        opacity: !root.enabled ? 0 : ta.pressed ? 0.16 : ta.has-hover ? 0.09 : 0;
+        animate opacity { duration: 120ms; }
+    }
+    HorizontalLayout {
+        padding-left: 24px;
+        padding-right: 26px;
+        spacing: 10px;
+        alignment: center;
+        if root.show-icon: VerticalLayout {
+            alignment: center;
+            Icon {
+                source: root.icon;
+                tint: #ffffff;
+                size: 18px;
+            }
+        }
+        Text {
+            text: root.text;
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Логотип Modly со свечением; плавно покачивается.
+component Logo inherits Rectangle {
+    in property <length> size: 84px;
+    in property <float> t;
+    in property <bool> float: true;
+    width: root.size;
+    height: root.size;
+    Rectangle {
+        y: root.float ? 4px * sin(root.t * 40deg) : 0;
+        width: root.size;
+        height: root.size;
+        border-radius: root.size * 0.28;
+        drop-shadow-blur: root.size * 0.55;
+        drop-shadow-color: #8b5cf680;
+        drop-shadow-offset-y: root.size * 0.08;
+        Image {
+            source: @image-url("../../modly-app/ui/icons/logo.svg");
+            width: root.size;
+            height: root.size;
+        }
+    }
+}
+
+// Крутящееся кольцо (идёт работа без процентов).
+component Spinner inherits Rectangle {
+    in property <length> size: 18px;
+    in property <float> t;
+    in property <length> thickness: 2.5px;
+    width: root.size;
+    height: root.size;
+    Rectangle {
+        width: root.size;
+        height: root.size;
+        border-radius: root.size / 2;
+        transform-rotation: root.t * 360deg;
+        background: @conic-gradient(#8b5cf600 0deg, #8b5cf6 200deg, #22d3ee 360deg);
+    }
+    Rectangle {
+        width: root.size - 2 * root.thickness;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.surface;
+    }
+}
+
+// Кольцо прогресса с процентами в центре.
+component ProgressRing inherits Rectangle {
+    in property <float> progress;
+    in property <bool> indeterminate;
+    in property <float> t;
+    in property <length> size: 132px;
+    in property <color> inner: Theme.bg;
+    width: root.size;
+    height: root.size;
+    // свечение
+    Rectangle {
+        width: root.size;
+        height: root.size;
+        border-radius: root.size / 2;
+        drop-shadow-blur: 40px;
+        drop-shadow-color: #8b5cf650;
+        background: Theme.surface-2;
+    }
+    property <angle> sweep: max(root.progress, 0.001) * 360deg;
+    if !root.indeterminate: Rectangle {
+        width: root.size;
+        height: root.size;
+        border-radius: root.size / 2;
+        background: @conic-gradient(#8b5cf6 0deg, #22d3ee root.sweep, Theme.surface-3 root.sweep, Theme.surface-3 360deg);
+    }
+    if root.indeterminate: Rectangle {
+        width: root.size;
+        height: root.size;
+        border-radius: root.size / 2;
+        transform-rotation: root.t * 300deg;
+        background: @conic-gradient(#8b5cf600 0deg, #8b5cf6 220deg, #22d3ee 360deg);
+    }
+    Rectangle {
+        width: root.size - 16px;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.inner;
+        Text {
+            text: root.indeterminate ? "" : Math.round(root.progress * 100) + "%";
+            color: Theme.text;
+            font-size: root.size * 0.22;
+            font-weight: 800;
+        }
+        if root.indeterminate: Logo {
+            size: root.size * 0.36;
+            t: root.t;
+            float: false;
+        }
+    }
+}
+
+// Полоска прогресса с бегущим бликом.
+component ProgressBar inherits Rectangle {
+    in property <float> progress;
+    in property <bool> indeterminate;
+    in property <float> t;
+    height: 8px;
+    border-radius: 4px;
+    background: Theme.surface-3;
+    clip: true;
+    Rectangle {
+        x: root.indeterminate ? (mod(root.t * 0.6, 1.4) - 0.4) * root.width : 0;
+        width: root.indeterminate ? root.width * 0.4 : root.width * clamp(root.progress, 0, 1);
+        border-radius: 4px;
+        background: Brand.gradient;
+        animate width { duration: 250ms; easing: ease-out; }
+    }
+    Rectangle {
+        width: 60px;
+        x: -60px + mod(root.t * 0.5, 1.6) * (root.width + 120px) / 1.6;
+        background: @linear-gradient(90deg, #ffffff00 0%, #ffffff40 50%, #ffffff00 100%);
+        opacity: root.progress > 0 || root.indeterminate ? 1 : 0;
+    }
+}
+
+// Строка шага: значок состояния и название.
+component StepRow inherits HorizontalLayout {
+    in property <StepItem> step;
+    in property <float> t;
+    spacing: 12px;
+    height: 30px;
+    VerticalLayout {
+        alignment: center;
+        Rectangle {
+            width: 22px;
+            height: 22px;
+            if root.step.state == "done": Rectangle {
+                border-radius: 11px;
+                background: #34d39926;
+                Icon {
+                    source: Icons.check;
+                    tint: Theme.success;
+                    size: 14px;
+                }
+            }
+            if root.step.state == "error": Rectangle {
+                border-radius: 11px;
+                background: #f8717126;
+                Icon {
+                    source: Icons.x;
+                    tint: Theme.danger;
+                    size: 13px;
+                }
+            }
+            if root.step.state == "active": Spinner {
+                size: 20px;
+                t: root.t;
+            }
+            if root.step.state == "pending": Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: Theme.border-strong;
+            }
+        }
+    }
+    Text {
+        text: root.step.title;
+        color: root.step.state == "pending" ? Theme.text-3 : root.step.state == "error" ? Theme.danger : Theme.text;
+        font-size: 13.5px;
+        font-weight: root.step.state == "active" ? 700 : 500;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+// Строка настройки: заголовок, пояснение и переключатель справа.
+component OptionRow inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> text;
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+    spacing: 12px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 1;
+        spacing: 1px;
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 13.5px;
+            font-weight: 600;
+            overflow: elide;
+        }
+        if root.text != "": Text {
+            text: root.text;
+            color: Theme.text-3;
+            font-size: 11.5px;
+            wrap: word-wrap;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        Toggle {
+            label: root.title;
+            checked: root.checked;
+            enabled: root.enabled;
+            toggled(v) => {
+                root.checked = v;
+                root.toggled(v);
+            }
+        }
+    }
+}
+
+component Divider inherits Rectangle {
+    height: 1px;
+    background: Theme.border;
+}
+
+// Пункт «что умеет Modly» на первой странице.
+component Feature inherits HorizontalLayout {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> text;
+    spacing: 14px;
+    VerticalLayout {
+        alignment: start;
+        Rectangle {
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            background: #ffffff0a;
+            border-width: 1px;
+            border-color: #ffffff12;
+            Icon {
+                source: root.icon;
+                tint: #c4b5fd;
+                size: 19px;
+            }
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        Text {
+            text: root.text;
+            color: Theme.text-3;
+            font-size: 12.5px;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// Пузырёк-подпись: версия, «Windows 10/11».
+component Pill inherits Rectangle {
+    in property <string> text;
+    in property <bool> accent: false;
+    height: 26px;
+    border-radius: 13px;
+    background: root.accent ? #8b5cf62a : #ffffff0c;
+    border-width: 1px;
+    border-color: root.accent ? #8b5cf670 : #ffffff14;
+    horizontal-stretch: 0;
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 11px;
+        Text {
+            text: root.text;
+            color: root.accent ? #ddd6fe : Theme.text-2;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Брызги вокруг галочки на странице «Готово».
+component Burst inherits Rectangle {
+    in property <float> p; // 0..1 — сколько прошло
+    width: 0;
+    height: 0;
+    for i in 14: Rectangle {
+        property <angle> a: i * 360deg / 14;
+        property <length> r: 64px + 70px * root.p;
+        width: (i.mod(2) == 0 ? 9px : 6px) * (1 - root.p * 0.5);
+        height: self.width;
+        border-radius: self.width / 2;
+        x: self.r * cos(self.a) - self.width / 2;
+        y: self.r * sin(self.a) - self.height / 2;
+        background: i.mod(3) == 0 ? #22d3ee : i.mod(3) == 1 ? #a78bfa : #f0abfc;
+        opacity: max(0, 1 - root.p * 1.1);
+    }
+}
+
+// Большой круг с галочкой (или крестиком при ошибке), появляется с пружинкой.
+component BigMark inherits Rectangle {
+    in property <bool> ok: true;
+    in property <float> t;
+    in property <float> shown-at;
+    property <float> p: clamp((root.t - root.shown-at) / 0.9, 0, 1);
+    width: 116px;
+    height: 116px;
+    if root.ok: Burst {
+        x: parent.width / 2;
+        y: parent.height / 2;
+        p: root.p;
+    }
+    Rectangle {
+        width: 116px;
+        height: 116px;
+        border-radius: 58px;
+        transform-scale: root.ok ? min(1, 0.55 + root.p * 1.6) - max(0, root.p * 1.6 - 0.45) * 0.12 * (1 - root.p) : 1;
+        background: root.ok ? Brand.gradient : @linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+        drop-shadow-blur: 46px;
+        drop-shadow-color: root.ok ? #8b5cf690 : #ef444470;
+        Icon {
+            source: root.ok ? Icons.check : Icons.alert;
+            tint: #ffffff;
+            size: 54px;
+        }
+    }
+}
+
+// Лицензия поверх окна.
+component LicenseSheet inherits Rectangle {
+    in property <string> text;
+    callback close();
+    background: #05060acc;
+    TouchArea {
+        clicked => {
+            root.close();
+        }
+    }
+    Rectangle {
+        width: min(root.width - 80px, 640px);
+        height: root.height - 90px;
+        border-radius: 18px;
+        background: Theme.surface;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 40px;
+        drop-shadow-color: #000000a0;
+        TouchArea { }
+        VerticalLayout {
+            padding: 22px;
+            spacing: 14px;
+            HorizontalLayout {
+                Text {
+                    text: Lang.t("Лицензия MIT", "MIT License");
+                    color: Theme.text;
+                    font-size: 17px;
+                    font-weight: 800;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                IconBtn {
+                    icon: Icons.x;
+                    label: Lang.t("Закрыть", "Close");
+                    clicked => {
+                        root.close();
+                    }
+                }
+            }
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    Text {
+                        text: root.text;
+                        color: Theme.text-2;
+                        font-size: 12.5px;
+                        font-family: "Consolas";
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------------- окно ---
+
+export component SetupWindow inherits Window {
+    in property <string> mode: "install";
+    in-out property <string> page: mode == "install" ? "welcome" : mode == "uninstall" ? "confirm" : "check";
+
+    // версии: ставим / уже стоит
+    in property <string> version;
+    in property <string> from-version;
+    // install: Modly уже стоит (кнопка «Обновить» / «Переустановить»)
+    in property <bool> installed;
+    in property <bool> downgrade;
+
+    in-out property <string> install-dir;
+    in property <string> size-text;
+    in property <string> dir-warning;
+    in-out property <bool> desktop-shortcut: true;
+    in-out property <bool> start-menu: true;
+    in-out property <bool> url-protocol: true;
+    in property <[ToolItem]> tools;
+    in property <bool> winget: true;
+
+    in property <float> progress;
+    in property <bool> indeterminate;
+    in property <string> status;
+    in property <[StepItem]> steps;
+    in property <string> error-text;
+    in property <string> notes;
+    in property <bool> modly-running;
+    in-out property <bool> remove-data: false;
+    in property <string> data-dir;
+    in property <string> license-text;
+    in property <string> done-text;
+
+    callback drag();
+    callback minimize();
+    callback close-window();
+    callback browse();
+    callback begin();
+    callback toggle-tool(string, bool);
+    callback launch();
+    callback retry();
+    callback open-log();
+    callback open-link(string);
+    callback close-modly();
+    callback set-english(bool);
+
+    property <float> t: animation-tick() / 1ms / 1000;
+    // когда показали «Готово» — от этого считается анимация галочки
+    property <float> done-at: 0;
+    property <bool> license-open: false;
+    changed page => {
+        if (self.page == "done" || self.page == "uptodate") {
+            self.done-at = self.t;
+        }
+    }
+
+    property <bool> compact: root.mode == "update";
+    title: root.mode == "uninstall" ? Lang.t("Удаление Modly", "Uninstall Modly")
+        : root.mode == "update" ? Lang.t("Обновление Modly", "Modly update") : Lang.t("Установка Modly", "Modly Setup");
+    icon: @image-url("../../modly-app/ui/icons/logo.svg");
+    no-frame: true;
+    width: root.compact ? 600px : 900px;
+    height: root.compact ? 430px : 624px;
+    background: Theme.bg;
+    default-font-family: "Segoe UI";
+
+    Aurora {
+        t: root.t;
+    }
+
+    // рамка окна
+    Rectangle {
+        border-width: 1px;
+        border-color: #ffffff14;
+    }
+
+    VerticalLayout {
+        // -------------------------------------------- заголовок окна
+        Rectangle {
+            height: 48px;
+            TouchArea {
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                        root.drag();
+                    }
+                }
+            }
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 10px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        source: @image-url("../../modly-app/ui/icons/logo.svg");
+                        width: 20px;
+                        height: 20px;
+                    }
+                }
+                Text {
+                    text: "Modly";
+                    color: Theme.text;
+                    font-size: 13.5px;
+                    font-weight: 800;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.mode == "uninstall" ? Lang.t("Удаление", "Uninstall")
+                        : root.mode == "update" ? Lang.t("Обновление", "Update") : Lang.t("Установка", "Setup");
+                    color: Theme.text-3;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                // язык
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        height: 28px;
+                        width: 76px;
+                        border-radius: 9px;
+                        background: #ffffff0a;
+                        border-width: 1px;
+                        border-color: #ffffff12;
+                        HorizontalLayout {
+                            padding: 3px;
+                            spacing: 2px;
+                            for l[i] in ["RU", "EN"]: Rectangle {
+                                property <bool> on: (i == 1) == Lang.english;
+                                border-radius: 6px;
+                                background: self.on ? Theme.surface-3 : transparent;
+                                Text {
+                                    text: l;
+                                    color: parent.on ? Theme.text : Theme.text-3;
+                                    font-size: 11.5px;
+                                    font-weight: 700;
+                                }
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.set-english(i == 1);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconBtn {
+                        icon: Icons.minus;
+                        label: Lang.t("Свернуть", "Minimize");
+                        size: 32px;
+                        clicked => {
+                            root.minimize();
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 10px;
+                        background: close-ta.pressed ? #b91c1c : close-ta.has-hover ? #dc2626 : transparent;
+                        animate background { duration: 120ms; }
+                        accessible-role: button;
+                        accessible-label: Lang.t("Закрыть", "Close");
+                        accessible-action-default => {
+                            root.close-window();
+                        }
+                        Icon {
+                            source: Icons.x;
+                            tint: close-ta.has-hover ? #ffffff : Theme.text-2;
+                            size: 16px;
+                        }
+                        close-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.close-window();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------- страницы
+        Rectangle {
+            vertical-stretch: 1;
+
+            // ===== установка: первая страница
+            if root.mode == "install" && root.page == "welcome": HorizontalLayout {
+                padding-left: 44px;
+                padding-right: 36px;
+                padding-top: 14px;
+                padding-bottom: 26px;
+                spacing: 36px;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 0px;
+                    alignment: start;
+                    Logo {
+                        size: 72px;
+                        t: root.t;
+                    }
+                    Rectangle {
+                        height: 18px;
+                    }
+                    Text {
+                        text: "Modly";
+                        color: Brand.text-gradient;
+                        font-size: 46px;
+                        font-weight: 800;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        padding-top: 6px;
+                        padding-bottom: 16px;
+                        Pill {
+                            text: root.version;
+                            accent: true;
+                        }
+                        Pill {
+                            text: "Windows 10 / 11 · x64";
+                        }
+                    }
+                    Text {
+                        text: Lang.t("Моды для любых игр — в один клик. А пока идёт игра, панель мода прямо в Modly.", "Mods for any game in one click — and a live mod panel right in Modly while you play.");
+                        color: Theme.text-2;
+                        font-size: 15px;
+                        wrap: word-wrap;
+                    }
+                    Rectangle {
+                        height: 22px;
+                    }
+                    VerticalLayout {
+                        spacing: 14px;
+                        Feature {
+                            icon: Icons.download;
+                            title: Lang.t("Каталог и установка в один клик", "Catalog and one-click install");
+                            text: Lang.t("Проверенные моды с mods.hackerstone.xyz, Modly сам найдёт игру.", "Reviewed mods from mods.hackerstone.xyz; Modly finds the game itself.");
+                        }
+                        Feature {
+                            icon: Icons.sliders;
+                            title: Lang.t("Панель мода во время игры", "A live mod panel");
+                            text: Lang.t("Переключатели, ползунки и кнопки мода, оверлей и пульт с телефона.", "The mod's toggles, sliders and buttons, an overlay and a phone remote.");
+                        }
+                        Feature {
+                            icon: Icons.shield;
+                            title: Lang.t("Обновляется сам", "Updates itself");
+                            text: Lang.t("Новые версии приходят с GitHub, подпись проверяется.", "New versions come from GitHub with a verified signature.");
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    width: 360px;
+                    spacing: 14px;
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: 18px;
+                        background: #131722e6;
+                        border-width: 1px;
+                        border-color: #ffffff12;
+                        drop-shadow-blur: 30px;
+                        drop-shadow-color: #00000070;
+                        VerticalLayout {
+                            padding: 20px;
+                            padding-top: 18px;
+                            spacing: 6px;
+                            Text {
+                                text: Lang.t("Куда установить", "Install to");
+                                color: Theme.text-3;
+                                font-size: 11.5px;
+                                font-weight: 700;
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Rectangle {
+                                    height: 38px;
+                                    horizontal-stretch: 1;
+                                    border-radius: 10px;
+                                    background: Theme.input;
+                                    border-width: 1px;
+                                    border-color: Theme.border-strong;
+                                    HorizontalLayout {
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        Text {
+                                            text: root.install-dir;
+                                            color: Theme.text-2;
+                                            font-size: 12px;
+                                            font-family: "Consolas";
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+                                Btn {
+                                    icon: Icons.folder;
+                                    show-icon: true;
+                                    label: Lang.t("Выбрать папку", "Choose folder");
+                                    width: 38px;
+                                    height: 38px;
+                                    clicked => {
+                                        root.browse();
+                                    }
+                                }
+                            }
+                            Text {
+                                text: root.dir-warning != "" ? root.dir-warning : root.size-text;
+                                color: root.dir-warning != "" ? Theme.warning : Theme.text-3;
+                                font-size: 11.5px;
+                                wrap: word-wrap;
+                            }
+                            Rectangle {
+                                height: 8px;
+                            }
+                            Divider { }
+                            OptionRow {
+                                title: Lang.t("Ярлык на рабочем столе", "Desktop shortcut");
+                                checked <=> root.desktop-shortcut;
+                            }
+                            OptionRow {
+                                title: Lang.t("Ярлык в меню «Пуск»", "Start menu shortcut");
+                                checked <=> root.start-menu;
+                            }
+                            OptionRow {
+                                title: Lang.t("Ссылки modly://", "modly:// links");
+                                text: Lang.t("Кнопка «Установить через Modly» на сайте", "The “Install with Modly” button on the site");
+                                checked <=> root.url-protocol;
+                            }
+                            if root.tools.length > 0: Divider { }
+                            if root.tools.length > 0: HorizontalLayout {
+                                padding-top: 8px;
+                                Text {
+                                    text: Lang.t("Для мододелов — по желанию", "For modders — optional");
+                                    color: Theme.text-3;
+                                    font-size: 11.5px;
+                                    font-weight: 700;
+                                }
+                            }
+                            for tool in root.tools: HorizontalLayout {
+                                spacing: 12px;
+                                padding-top: 6px;
+                                padding-bottom: 4px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    horizontal-stretch: 1;
+                                    spacing: 1px;
+                                    Text {
+                                        text: tool.title;
+                                        color: Theme.text;
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                    }
+                                    Text {
+                                        text: tool.text;
+                                        color: Theme.text-3;
+                                        font-size: 11px;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    if tool.present: Pill {
+                                        text: Lang.t("Уже есть", "Installed");
+                                    }
+                                    if !tool.present: Toggle {
+                                        label: tool.title;
+                                        checked: tool.selected;
+                                        enabled: root.winget;
+                                        toggled(v) => {
+                                            root.toggle-tool(tool.id, v);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 12px;
+                        alignment: end;
+                        GlowButton {
+                            horizontal-stretch: 1;
+                            t: root.t;
+                            text: root.downgrade ? Lang.t("Установить ", "Install ") + root.version
+                                : root.installed && root.from-version == root.version ? Lang.t("Переустановить", "Reinstall")
+                                : root.installed ? Lang.t("Обновить до ", "Update to ") + root.version
+                                : Lang.t("Установить", "Install");
+                            icon: Icons.download;
+                            show-icon: true;
+                            clicked => {
+                                root.begin();
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        Text {
+                            text: Lang.t("Устанавливая, вы принимаете", "By installing you accept the");
+                            color: Theme.text-3;
+                            font-size: 11.5px;
+                        }
+                        Text {
+                            text: Lang.t("лицензию MIT", "MIT license");
+                            color: #a78bfa;
+                            font-size: 11.5px;
+                            font-weight: 600;
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.license-open = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ===== удаление: подтверждение
+            if root.mode == "uninstall" && root.page == "confirm": VerticalLayout {
+                alignment: center;
+                padding-left: 120px;
+                padding-right: 120px;
+                padding-bottom: 30px;
+                spacing: 0px;
+                HorizontalLayout {
+                    alignment: center;
+                    Logo {
+                        size: 76px;
+                        t: root.t;
+                    }
+                }
+                Rectangle {
+                    height: 24px;
+                }
+                Text {
+                    text: Lang.t("Удалить Modly?", "Uninstall Modly?");
+                    color: Theme.text;
+                    font-size: 30px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                }
+                Rectangle {
+                    height: 10px;
+                }
+                Text {
+                    text: Lang.t("Программа, её ярлыки и ссылки modly:// будут удалены. Моды, которые стоят в играх, останутся на месте — если нужно, сначала удалите их в Modly.", "The program, its shortcuts and modly:// links will be removed. Mods installed into games stay where they are — remove them in Modly first if you need to.");
+                    color: Theme.text-2;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                }
+                Rectangle {
+                    height: 24px;
+                }
+                Rectangle {
+                    border-radius: 16px;
+                    background: #131722e6;
+                    border-width: 1px;
+                    border-color: root.remove-data ? #f8717160 : #ffffff12;
+                    animate border-color { duration: 160ms; }
+                    VerticalLayout {
+                        padding: 16px;
+                        padding-left: 20px;
+                        padding-right: 20px;
+                        OptionRow {
+                            title: Lang.t("Удалить и мои данные", "Remove my data too");
+                            text: Lang.t("Настройки, библиотеку игр и моды из папки ", "Settings, game library and mods from ") + root.data-dir + Lang.t(". Вернуть их будет нельзя.", ". This can't be undone.");
+                            checked <=> root.remove-data;
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 26px;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 12px;
+                    Btn {
+                        text: Lang.t("Отмена", "Cancel");
+                        height: 48px;
+                        width: 150px;
+                        clicked => {
+                            root.close-window();
+                        }
+                    }
+                    GlowButton {
+                        t: root.t;
+                        danger: true;
+                        text: Lang.t("Удалить", "Uninstall");
+                        icon: Icons.trash;
+                        show-icon: true;
+                        clicked => {
+                            root.begin();
+                        }
+                    }
+                }
+            }
+
+            // ===== обновление: проверка, есть ли новая версия
+            if root.mode == "update" && root.page == "check": VerticalLayout {
+                alignment: center;
+                spacing: 18px;
+                HorizontalLayout {
+                    alignment: center;
+                    ProgressRing {
+                        size: 108px;
+                        indeterminate: true;
+                        t: root.t;
+                    }
+                }
+                Text {
+                    text: Lang.t("Ищем обновления…", "Checking for updates…");
+                    color: Theme.text;
+                    font-size: 20px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: Lang.t("Сейчас стоит ", "Installed: ") + root.from-version;
+                    color: Theme.text-3;
+                    font-size: 13px;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // ===== обновление: есть новая версия
+            if root.mode == "update" && root.page == "available": VerticalLayout {
+                padding-left: 36px;
+                padding-right: 36px;
+                padding-bottom: 26px;
+                spacing: 14px;
+                HorizontalLayout {
+                    spacing: 18px;
+                    Logo {
+                        size: 64px;
+                        t: root.t;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        Text {
+                            text: Lang.t("Доступна новая версия", "A new version is available");
+                            color: Theme.text;
+                            font-size: 21px;
+                            font-weight: 800;
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            Pill {
+                                text: root.from-version;
+                            }
+                            Text {
+                                text: "→";
+                                color: Theme.text-3;
+                                vertical-alignment: center;
+                            }
+                            Pill {
+                                text: root.version;
+                                accent: true;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    vertical-stretch: 1;
+                    border-radius: 14px;
+                    background: #131722e6;
+                    border-width: 1px;
+                    border-color: #ffffff12;
+                    ScrollView {
+                        VerticalLayout {
+                            padding: 16px;
+                            Text {
+                                text: root.notes != "" ? root.notes : Lang.t("Описание выпуска — на GitHub.", "Release notes are on GitHub.");
+                                color: Theme.text-2;
+                                font-size: 13px;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 12px;
+                    Btn {
+                        text: Lang.t("Позже", "Later");
+                        height: 48px;
+                        width: 120px;
+                        clicked => {
+                            root.close-window();
+                        }
+                    }
+                    GlowButton {
+                        t: root.t;
+                        text: Lang.t("Обновить", "Update");
+                        icon: Icons.download;
+                        show-icon: true;
+                        clicked => {
+                            root.begin();
+                        }
+                    }
+                }
+            }
+
+            // ===== идёт работа (все режимы)
+            if root.page == "progress": VerticalLayout {
+                alignment: center;
+                padding-bottom: root.compact ? 20px : 34px;
+                spacing: 0px;
+                HorizontalLayout {
+                    alignment: center;
+                    ProgressRing {
+                        size: root.compact ? 104px : 136px;
+                        progress: root.progress;
+                        indeterminate: root.indeterminate;
+                        t: root.t;
+                    }
+                }
+                Rectangle {
+                    height: root.compact ? 18px : 26px;
+                }
+                Text {
+                    text: root.mode == "uninstall" ? Lang.t("Удаляем Modly", "Uninstalling Modly")
+                        : root.mode == "update" ? Lang.t("Обновляем Modly до ", "Updating Modly to ") + root.version
+                        : root.installed ? Lang.t("Обновляем Modly", "Updating Modly") : Lang.t("Устанавливаем Modly", "Installing Modly");
+                    color: Theme.text;
+                    font-size: root.compact ? 20px : 26px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                }
+                Rectangle {
+                    height: 8px;
+                }
+                Text {
+                    text: root.status;
+                    color: Theme.text-2;
+                    font-size: 13.5px;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+                Rectangle {
+                    height: root.compact ? 16px : 24px;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        width: root.compact ? 420px : 380px;
+                        spacing: 4px;
+                        if root.compact: ProgressBar {
+                            progress: root.progress;
+                            indeterminate: root.indeterminate;
+                            t: root.t;
+                        }
+                        if root.compact: Rectangle {
+                            height: 10px;
+                        }
+                        if !root.compact: Rectangle {
+                            border-radius: 16px;
+                            background: #131722d0;
+                            border-width: 1px;
+                            border-color: #ffffff10;
+                            VerticalLayout {
+                                padding: 14px;
+                                padding-left: 20px;
+                                padding-right: 20px;
+                                spacing: 2px;
+                                for s in root.steps: StepRow {
+                                    step: s;
+                                    t: root.t;
+                                }
+                            }
+                        }
+                        if root.compact && root.modly-running: HorizontalLayout {
+                            alignment: center;
+                            padding-top: 6px;
+                            Btn {
+                                text: Lang.t("Закрыть Modly", "Close Modly");
+                                icon: Icons.x;
+                                show-icon: true;
+                                compact: true;
+                                clicked => {
+                                    root.close-modly();
+                                }
+                            }
+                        }
+                    }
+                }
+                if !root.compact && root.modly-running: HorizontalLayout {
+                    alignment: center;
+                    padding-top: 14px;
+                    Btn {
+                        text: Lang.t("Закрыть Modly и продолжить", "Close Modly and continue");
+                        icon: Icons.x;
+                        show-icon: true;
+                        kind: "primary";
+                        clicked => {
+                            root.close-modly();
+                        }
+                    }
+                }
+            }
+
+            // ===== готово / уже последняя версия
+            if root.page == "done" || root.page == "uptodate": VerticalLayout {
+                alignment: center;
+                padding-bottom: root.compact ? 16px : 30px;
+                spacing: 0px;
+                HorizontalLayout {
+                    alignment: center;
+                    BigMark {
+                        t: root.t;
+                        shown-at: root.done-at;
+                    }
+                }
+                Rectangle {
+                    height: root.compact ? 22px : 30px;
+                }
+                Text {
+                    text: root.page == "uptodate" ? Lang.t("У вас последняя версия", "You're up to date")
+                        : root.mode == "uninstall" ? Lang.t("Modly удалён", "Modly is uninstalled")
+                        : root.mode == "update" || root.installed ? Lang.t("Modly обновлён!", "Modly is updated!")
+                        : Lang.t("Modly установлен!", "Modly is installed!");
+                    color: Theme.text;
+                    font-size: root.compact ? 22px : 30px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                }
+                Rectangle {
+                    height: 8px;
+                }
+                Text {
+                    text: root.done-text;
+                    color: Theme.text-2;
+                    font-size: 13.5px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+                Rectangle {
+                    height: root.compact ? 20px : 30px;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 12px;
+                    if root.mode == "install": Btn {
+                        text: Lang.t("Закрыть", "Close");
+                        height: 48px;
+                        width: 130px;
+                        clicked => {
+                            root.close-window();
+                        }
+                    }
+                    if root.mode == "install": GlowButton {
+                        t: root.t;
+                        text: Lang.t("Запустить Modly", "Launch Modly");
+                        icon: Icons.play;
+                        show-icon: true;
+                        clicked => {
+                            root.launch();
+                        }
+                    }
+                    if root.mode != "install": GlowButton {
+                        t: root.t;
+                        text: Lang.t("Готово", "Done");
+                        clicked => {
+                            root.close-window();
+                        }
+                    }
+                }
+                if !root.compact: HorizontalLayout {
+                    alignment: center;
+                    padding-top: 34px;
+                    AboutSlint {
+                        width: 130px;
+                    }
+                }
+            }
+
+            // ===== ошибка
+            if root.page == "error": VerticalLayout {
+                alignment: center;
+                padding-left: 80px;
+                padding-right: 80px;
+                padding-bottom: 24px;
+                spacing: 0px;
+                HorizontalLayout {
+                    alignment: center;
+                    BigMark {
+                        ok: false;
+                        t: root.t;
+                    }
+                }
+                Rectangle {
+                    height: 26px;
+                }
+                Text {
+                    text: root.mode == "uninstall" ? Lang.t("Не получилось удалить", "Couldn't uninstall")
+                        : root.mode == "update" ? Lang.t("Не получилось обновить", "Couldn't update")
+                        : Lang.t("Не получилось установить", "Couldn't install");
+                    color: Theme.text;
+                    font-size: root.compact ? 21px : 26px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                }
+                Rectangle {
+                    height: 10px;
+                }
+                Text {
+                    text: root.error-text;
+                    color: Theme.text-2;
+                    font-size: 13.5px;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                }
+                Rectangle {
+                    height: 24px;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 10px;
+                    Btn {
+                        text: Lang.t("Журнал", "Log");
+                        icon: Icons.book;
+                        show-icon: true;
+                        kind: "ghost";
+                        clicked => {
+                            root.open-log();
+                        }
+                    }
+                    Btn {
+                        text: Lang.t("Закрыть", "Close");
+                        clicked => {
+                            root.close-window();
+                        }
+                    }
+                    Btn {
+                        text: Lang.t("Повторить", "Try again");
+                        icon: Icons.refresh;
+                        show-icon: true;
+                        kind: "primary";
+                        clicked => {
+                            root.retry();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.license-open: LicenseSheet {
+        text: root.license-text;
+        close => {
+            root.license-open = false;
+        }
+    }
+}

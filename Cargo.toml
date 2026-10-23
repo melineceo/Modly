@@ -4,11 +4,13 @@ members = [
     "crates/modly-protocol",
     "crates/modly-core",
     "crates/modly-app",
+    "crates/modly-setup",
     "sdk/rust",
+    "xtask",
 ]
 
 [workspace.package]
-version = "0.1.0-beta"
+version = "0.2.0-beta"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Modly contributors"]

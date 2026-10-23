@@ -278,6 +278,47 @@ export component Sidebar inherits Rectangle {
             }
         }
 
+        // доступно обновление Modly
+        if Store.update-state == "available" || Store.update-state == "downloading": Rectangle {
+            height: 40px;
+            border-radius: 12px;
+            // однотонно: программный рендерер не скругляет углы у градиента
+            background: Theme.accent;
+            drop-shadow-blur: 16px;
+            drop-shadow-color: #8b5cf650;
+            accessible-role: button;
+            accessible-label: Lang.t("Доступно обновление Modly", "A Modly update is available");
+            accessible-action-default => {
+                Store.navigate("settings");
+            }
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 9px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: Icons.download;
+                        tint: #ffffff;
+                        size: 15px;
+                    }
+                }
+                Text {
+                    text: Store.update-state == "downloading" ? Lang.t("Скачиваем обновление…", "Downloading update…") : Lang.t("Обновление ", "Update ") + Store.update-version;
+                    color: #ffffff;
+                    font-size: 12px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    Store.navigate("settings");
+                }
+            }
+        }
         // состояние моста
         Rectangle {
             height: 44px;

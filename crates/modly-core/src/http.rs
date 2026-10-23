@@ -2,8 +2,10 @@
 //!
 //! Сертификат сайта проверяет сама Windows (как браузер), прокси берётся системный, своей
 //! библиотеки TLS в Modly нет. Перенаправления и cookies выключены: Modly ходит только по адресам,
-//! которые построил сам, и сервер не может «увести» запрос в другое место. Обычный http разрешён
-//! только для своего компьютера (127.0.0.1 / localhost) — для проверки сайта локально.
+//! которые построил сам, и сервер не может «увести» запрос в другое место. Исключение — запрос
+//! с [`Request::follow`]: файлы выпусков GitHub отдаёт перенаправлением на свой CDN, и переход
+//! разрешён только по https и только на перечисленные домены. Обычный http разрешён только для
+//! своего компьютера (127.0.0.1 / localhost) — для проверки сайта локально.
 
 use anyhow::{Result, bail};
 
@@ -51,11 +53,27 @@ pub struct Request<'a> {
     pub headers: Vec<(&'static str, String)>,
     pub body: Option<&'a [u8]>,
     pub timeout_ms: i32,
+    /// Куда можно перейти по перенаправлению (3xx): домены или `.суффикс` домена. Пусто — никуда.
+    pub follow: &'static [&'static str],
+}
+
+/// Можно ли перейти на `url` по перенаправлению: только https и только на домен из списка.
+pub fn redirect_allowed(url: &str, follow: &[&str]) -> bool {
+    match parse_url(url) {
+        Ok((true, host, _, _)) => {
+            let host = host.to_ascii_lowercase();
+            follow.iter().any(|f| match f.strip_prefix('.') {
+                Some(suffix) => host.ends_with(&format!(".{suffix}")),
+                None => host == *f,
+            })
+        }
+        _ => false,
+    }
 }
 
 impl<'a> Request<'a> {
     pub fn get(url: &'a str) -> Self {
-        Request { method: "GET", url, headers: Vec::new(), body: None, timeout_ms: 20_000 }
+        Request { method: "GET", url, headers: Vec::new(), body: None, timeout_ms: 20_000, follow: &[] }
     }
 
     pub fn post_json(url: &'a str, body: &'a [u8]) -> Self {
@@ -65,6 +83,7 @@ impl<'a> Request<'a> {
             headers: vec![("Content-Type", "application/json".to_owned())],
             body: Some(body),
             timeout_ms: 20_000,
+            follow: &[],
         }
     }
 
@@ -84,6 +103,34 @@ pub fn send(
     on_head: &mut dyn FnMut(u16, Option<u64>) -> Result<()>,
     on_data: &mut dyn FnMut(&[u8]) -> Result<()>,
 ) -> Result<u16> {
+    let mut url = req.url.to_owned();
+    for _ in 0..5 {
+        let hop = Request { url: &url, headers: req.headers.clone(), ..*req };
+        match send_once(&hop, on_head, on_data)? {
+            Sent::Done(status) => return Ok(status),
+            Sent::Redirect(next) => {
+                if !redirect_allowed(&next, req.follow) {
+                    bail!("сервер перенаправил запрос на неразрешённый адрес");
+                }
+                url = next;
+            }
+        }
+    }
+    bail!("слишком много перенаправлений")
+}
+
+#[cfg(windows)]
+enum Sent {
+    Done(u16),
+    Redirect(String),
+}
+
+#[cfg(windows)]
+fn send_once(
+    req: &Request,
+    on_head: &mut dyn FnMut(u16, Option<u64>) -> Result<()>,
+    on_data: &mut dyn FnMut(&[u8]) -> Result<()>,
+) -> Result<Sent> {
     use std::ffi::c_void;
     use windows::Win32::Networking::WinHttp::*;
     use windows::core::{HSTRING, PCWSTR};
@@ -150,7 +197,11 @@ pub fn send(
         WinHttpSetOption(Some(request.0), WINHTTP_OPTION_REDIRECT_POLICY, Some(&WINHTTP_OPTION_REDIRECT_POLICY_NEVER.to_ne_bytes()))
             .map_err(net_err)?;
 
-        let mut head = String::from("Accept: application/json, */*\r\n");
+        let mut head = if req.headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("accept")) {
+            String::new()
+        } else {
+            String::from("Accept: application/json, */*\r\n")
+        };
         for (k, v) in &req.headers {
             if v.contains(['\r', '\n']) {
                 bail!("неверный заголовок");
@@ -181,6 +232,20 @@ pub fn send(
             std::ptr::null_mut(),
         )
         .map_err(net_err)?;
+        if !req.follow.is_empty() && matches!(status, 301 | 302 | 303 | 307 | 308) {
+            let mut buf = vec![0u16; 4096];
+            let mut size = (buf.len() * 2) as u32;
+            WinHttpQueryHeaders(
+                request.0,
+                WINHTTP_QUERY_LOCATION,
+                PCWSTR::null(),
+                Some(buf.as_mut_ptr().cast()),
+                &mut size,
+                std::ptr::null_mut(),
+            )
+            .map_err(net_err)?;
+            return Ok(Sent::Redirect(String::from_utf16_lossy(&buf[..size as usize / 2])));
+        }
         let mut clen: u32 = 0;
         let mut len = 4u32;
         let has_len = WinHttpQueryHeaders(
@@ -203,7 +268,7 @@ pub fn send(
             }
             on_data(&buf[..read as usize])?;
         }
-        Ok(status as u16)
+        Ok(Sent::Done(status as u16))
     }
 }
 
@@ -258,5 +323,16 @@ mod tests {
         ] {
             assert!(parse_url(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn redirects_only_to_listed_https_hosts() {
+        let gh: &[&str] = &["github.com", ".githubusercontent.com"];
+        assert!(redirect_allowed("https://github.com/a/b/releases/download/v1/x.zip", gh));
+        assert!(redirect_allowed("https://release-assets.githubusercontent.com/x?sig=1", gh));
+        assert!(!redirect_allowed("http://objects.githubusercontent.com/x", gh));
+        assert!(!redirect_allowed("https://evilgithub.com/x", gh));
+        assert!(!redirect_allowed("https://githubusercontent.com.evil.io/x", gh));
+        assert!(!redirect_allowed("https://github.com/x", &[]));
     }
 }

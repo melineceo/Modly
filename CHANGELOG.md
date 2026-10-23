@@ -1,0 +1,41 @@
+# Что нового в Modly
+
+Формат: раздел `## <версия> — <дата>`, в нём `### Русский` и `### English`. Отсюда `cargo xtask dist`
+берёт текст выпуска на GitHub и в обновлении внутри Modly.
+
+## 0.2.0-beta — 2026-10-23
+
+### Русский
+- **Установщик** `ModlySetup-0.2.0-beta.exe` в стиле Modly: ставит для текущего пользователя без прав
+  администратора, можно выбрать папку, ярлыки на рабочем столе и в «Пуске», ссылки `modly://`.
+  Modly появляется в «Приложения и возможности». По желанию — инструменты мододела: .NET SDK и
+  C++ Build Tools (через winget).
+- **Modly обновляется сам.** Проверяет GitHub при запуске и раз в 6 часов; новая версия — кнопка
+  «Обновить» в настройках и в боковой панели. Обновление подписано ключом выпусков (Ed25519), Modly
+  сверяет подпись и SHA-256. Если новая версия не запустится, вернётся прежняя.
+- **Обновлятор** `modly-updater.exe` рядом с Modly: ставит обновления и удаляет Modly (можно оставить
+  или удалить настройки и библиотеку).
+- Каналы обновлений: бета-версии или только выпуски; автопроверку можно выключить.
+- Среда выполнения C++ теперь внутри exe — Visual C++ Redistributable не нужен.
+
+### English
+- **Installer** `ModlySetup-0.2.0-beta.exe` in Modly's style: installs for the current user without
+  administrator rights, lets you pick the folder, desktop and Start menu shortcuts and `modly://` links.
+  Modly shows up in Apps & features. Optional modder tools: .NET SDK and C++ Build Tools (via winget).
+- **Modly updates itself.** It checks GitHub at start and every 6 hours; a new version gets an
+  "Update" button in Settings and in the sidebar. Updates are signed with the release key (Ed25519);
+  Modly checks the signature and SHA-256. If the new version fails to start, the previous one comes back.
+- **Updater** `modly-updater.exe` next to Modly installs updates and uninstalls Modly (keep or remove
+  your settings and library).
+- Update channels: betas or releases only; automatic checks can be turned off.
+- The C++ runtime is now built into the exe — no Visual C++ Redistributable needed.
+
+## 0.1.0-beta — 2026-10-23
+
+### Русский
+- Первый публичный выпуск: библиотека игр, установка модов в один клик, панель мода во время игры,
+  оверлей, пульт с телефона, каталог mods.hackerstone.xyz, SDK для C#, C++ и Rust.
+
+### English
+- First public release: game library, one-click mod install, live mod panel, overlay, phone remote,
+  the mods.hackerstone.xyz catalog, SDKs for C#, C++ and Rust.

@@ -18,14 +18,23 @@
 - **Unity без загрузчиков.** Для Unity-игр на Mono Modly ставит мод без BepInEx — прописывает DLL
   в списки Unity, и игра загружает её сама.
 
-> **Бета 0.1.0.** Это первый публичный выпуск — ошибки почти наверняка найдутся. Нашли — напишите в
+> **Бета.** Modly ещё в бете — ошибки почти наверняка найдутся. Нашли — напишите в
 > [Issues](../../issues), в [Telegram](https://t.me/hackerstonecorp) или [Discord](https://discord.gg/SNM4KemTv).
 
 ## Скачать
 
-Готовый Modly — на странице [Releases](../../releases): архив `Modly-0.1.0-beta-windows-x64.zip`
-(Windows 10/11, x64). Установка не нужна — распакуйте и запустите `modly.exe`. Настройки и библиотека
-хранятся в `%APPDATA%\Modly`.
+Последняя версия — на странице [Releases](../../releases) (Windows 10/11, x64):
+
+- **`ModlySetup-<версия>.exe`** — установщик. Ставит Modly для текущего пользователя (без прав
+  администратора) в `%LOCALAPPDATA%\Programs\Modly`, создаёт ярлыки, подключает ссылки `modly://`
+  и запись в «Приложения и возможности». По желанию ставит инструменты мододела (.NET SDK, C++ Build Tools).
+- **`Modly-<версия>-windows-x64.zip`** — портативная версия: распакуйте и запустите `modly.exe`.
+
+Дальше Modly **обновляется сам**: проверяет GitHub при запуске и раз в 6 часов и ставит новую версию
+по кнопке «Обновить». Каждое обновление подписано ключом выпусков — Modly сверяет подпись и SHA-256,
+а если новая версия не запустится, вернёт прежнюю. Бета-версии и автопроверка — в «Настройки → Обновления».
+Отдельные библиотеки не нужны: среда выполнения C++ вшита в exe. Настройки и библиотека игр хранятся
+в `%APPDATA%\Modly`. Что нового — в [CHANGELOG.md](CHANGELOG.md).
 
 ## Возможности
 
@@ -66,6 +75,9 @@ cargo run -p modly-app --release
 Готовый exe — `target/release/modly.exe`. Данные Modly — в `%APPDATA%\Modly`
 (переменная `MODLY_HOME` подменяет папку — удобно для тестов).
 
+Установщик, архив и подписанный манифест обновления собирает `cargo xtask dist`
+(выложить на GitHub — `cargo xtask dist --publish`), подробности — в [docs/RELEASING.md](docs/RELEASING.md).
+
 Флаги запуска: `--page home|mods|catalog|dev|settings`, `--game <название или папка>`,
 `modly://install/<адрес мода>` (так Modly открывает сайт; если Modly уже запущен, ссылка уходит ему).
 `MODLY_MODS_URL` подменяет адрес сайта модов (например, `http://127.0.0.1:8082` для локальной копии).
@@ -83,6 +95,8 @@ crates/
   modly-protocol/   протокол Modly ↔ мод: сообщения и описание интерфейса
   modly-core/       библиотека игр, пакеты модов, установщики, процессы, сервер канала
   modly-app/        приложение: Rust + Slint (ui/*.slint)
+  modly-setup/      установщик (ModlySetup.exe), обновлятор и удаление (modly-updater.exe)
+xtask/              выпуск: ключ подписи, установщик, пакет обновления, публикация на GitHub
 sdk/
   unity/Modly.cs    SDK для C# (Unity, .NET)
   cpp/modly.hpp     SDK для C++ (Unreal, натив)
@@ -92,6 +106,7 @@ examples/
 docs/
   PROTOCOL.md       протокол — для модов на любом языке
   MANIFEST.md       пакет мода (modly.json): поиск игры и установка
+  RELEASING.md      как выпустить новую версию Modly
 mods/               пакеты модов для разработки (приватные моды сюда, они в .gitignore)
 ```
 
@@ -130,6 +145,9 @@ an in-game overlay (`Ctrl+Shift+O`), a phone remote (QR code, local network only
 MIT licensed © Meline / Hackerstone.
 Build with `cargo run -p modly-app --release`.
 
-**Beta 0.1.0** — the first public release, so expect bugs; please report them in [Issues](../../issues).
-Download `Modly-0.1.0-beta-windows-x64.zip` from [Releases](../../releases) (Windows 10/11 x64, no installer:
-unpack and run `modly.exe`).
+**Beta** — expect bugs; please report them in [Issues](../../issues).
+Get `ModlySetup-<version>.exe` from [Releases](../../releases) (Windows 10/11 x64): it installs Modly for the
+current user without admin rights, adds shortcuts, `modly://` links and an Apps & features entry, and can
+install modder tools (.NET SDK, C++ Build Tools). A portable zip is there too. After that Modly **updates
+itself**: signed updates from GitHub (Ed25519 + SHA-256), with rollback if a new version fails to start.
+No extra runtimes needed. Releases are built with `cargo xtask dist` — see [docs/RELEASING.md](docs/RELEASING.md).

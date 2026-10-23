@@ -288,6 +288,15 @@ export global Store {
     in-out property <[string]> mod-dirs;
     in-out property <string> data-dir;
     in-out property <string> version;
+    // обновления Modly: idle | checking | latest | available | downloading | error | dev
+    in-out property <string> update-state: "idle";
+    in-out property <string> update-version;
+    in-out property <string> update-notes;
+    in-out property <float> update-progress;
+    in-out property <string> update-error;
+    in-out property <string> update-checked;
+    in-out property <bool> update-beta;
+    in-out property <bool> update-auto: true;
     // ok | error | starting
     in-out property <string> hub-state: "starting";
     in-out property <string> hub-text;
@@ -382,4 +391,10 @@ export global Store {
     callback account-logout();
     callback confirm-install();
     callback confirm-cancel();
+
+    callback update-check();
+    callback update-install();
+    callback update-open-page();
+    callback set-update-beta(bool);
+    callback set-update-auto(bool);
 }

@@ -1,0 +1,15 @@
+name: Идея / Feature request
+description: Чего не хватает в Modly / What Modly is missing
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Идея / Idea
+      description: Что хочется и зачем. / What you'd like and why.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: Как это могло бы выглядеть / How it could look

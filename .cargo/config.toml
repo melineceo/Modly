@@ -1,0 +1,8 @@
+# Среда выполнения C (VCRUNTIME140) вшивается в exe: Modly, установщику и обновлятору не нужен
+# отдельный Visual C++ Redistributable — они запускаются на чистой Windows 10/11.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# cargo xtask keygen | dist [--publish] — выпуск: установщик, архив, подписанный манифест обновления.
+[alias]
+xtask = "run --quiet --package xtask --"

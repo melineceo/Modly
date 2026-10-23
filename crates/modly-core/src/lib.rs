@@ -9,6 +9,7 @@
 //! - [`site`] — каталог модов mods.hackerstone.xyz, установка из него и вход (через [`http`]);
 //! - [`templates`] — «Сделать мод»: готовый проект мода для любой игры из библиотеки;
 //! - [`remote`] — пульт с телефона: веб-сервер панели в домашней сети;
+//! - [`update`] — обновления Modly: выпуски на GitHub, подписанный манифест, пакет обновления;
 //! - [`settings`], [`paths`] — настройки и папки Modly.
 
 pub mod hotkeys;
@@ -24,6 +25,7 @@ pub mod remote;
 pub mod settings;
 pub mod site;
 pub mod templates;
+pub mod update;
 #[cfg(windows)]
 pub mod win;
 

@@ -1784,6 +1784,126 @@ export component SettingsPage inherits Rectangle {
             Card {
                 VerticalLayout {
                     SettingRow {
+                        icon: Icons.refresh;
+                        title: Store.update-state == "available" ? Lang.t("Доступна версия ", "Version available: ") + Store.update-version
+                            : Store.update-state == "downloading" ? Lang.t("Скачиваем ", "Downloading ") + Store.update-version + "…"
+                            : Lang.t("Обновления", "Updates");
+                        text: Store.update-state == "checking" ? Lang.t("Проверяем…", "Checking…")
+                            : Store.update-state == "latest" ? Lang.t("У вас последняя версия", "You're up to date") + (Store.update-checked != "" ? " · " + Store.update-checked : "")
+                            : Store.update-state == "available" ? Lang.t("Modly закроется на пару секунд и откроется уже новым. Подпись обновления проверяется.", "Modly closes for a few seconds and reopens as the new version. The update's signature is verified.")
+                            : Store.update-state == "downloading" ? Math.round(Store.update-progress * 100) + "%"
+                            : Store.update-state == "error" ? Store.update-error
+                            : Store.update-state == "dev" ? Lang.t("В сборке для разработки обновления выключены — их ставит установщик.", "Updates are off in a development build — the installer handles them.")
+                            : Lang.t("Новые версии приходят с GitHub: проверка при запуске и раз в 6 часов.", "New versions come from GitHub: checked at start and every 6 hours.");
+                        VerticalLayout {
+                            alignment: center;
+                            if Store.update-state == "available": Btn {
+                                text: Lang.t("Обновить", "Update");
+                                icon: Icons.download;
+                                show-icon: true;
+                                kind: "primary";
+                                compact: true;
+                                clicked => {
+                                    Store.update-install();
+                                }
+                            }
+                            if Store.update-state == "idle" || Store.update-state == "latest" || Store.update-state == "error": Btn {
+                                text: Lang.t("Проверить", "Check now");
+                                icon: Icons.refresh;
+                                show-icon: true;
+                                compact: true;
+                                clicked => {
+                                    Store.update-check();
+                                }
+                            }
+                        }
+                    }
+                    if Store.update-state == "downloading": HorizontalLayout {
+                        padding-left: 68px;
+                        padding-right: 18px;
+                        padding-bottom: 16px;
+                        Rectangle {
+                            height: 6px;
+                            border-radius: 3px;
+                            background: Theme.surface-3;
+                            Rectangle {
+                                x: 0;
+                                width: parent.width * Store.update-progress;
+                                border-radius: 3px;
+                                background: Theme.accent;
+                                animate width { duration: 200ms; }
+                            }
+                        }
+                    }
+                    if Store.update-state == "available": VerticalLayout {
+                        padding-left: 68px;
+                        padding-right: 18px;
+                        padding-bottom: 16px;
+                        spacing: 10px;
+                        if Store.update-notes != "": Text {
+                            text: Store.update-notes;
+                            color: Theme.text-2;
+                            font-size: 12.5px;
+                            wrap: word-wrap;
+                        }
+                        HorizontalLayout {
+                            alignment: start;
+                            Btn {
+                                text: Lang.t("Подробнее на GitHub", "Details on GitHub");
+                                icon: Icons.external;
+                                show-icon: true;
+                                kind: "ghost";
+                                compact: true;
+                                clicked => {
+                                    Store.update-open-page();
+                                }
+                            }
+                        }
+                    }
+                    if Store.update-state != "dev": Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    if Store.update-state != "dev": SettingRow {
+                        icon: Icons.sparkles;
+                        title: Lang.t("Бета-версии", "Beta versions");
+                        text: Lang.t("Новое раньше всех — но и ошибки в бетах бывают чаще.", "New features first — but betas have bugs more often.");
+                        VerticalLayout {
+                            alignment: center;
+                            Toggle {
+                                label: Lang.t("Бета-версии", "Beta versions");
+                                checked: Store.update-beta;
+                                toggled(v) => {
+                                    Store.set-update-beta(v);
+                                }
+                            }
+                        }
+                    }
+                    if Store.update-state != "dev": Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    if Store.update-state != "dev": SettingRow {
+                        icon: Icons.clock;
+                        title: Lang.t("Проверять обновления сам", "Check for updates automatically");
+                        text: Lang.t("При запуске и раз в 6 часов. Ставить или нет — решаете вы.", "At start and every 6 hours. You decide whether to install.");
+                        VerticalLayout {
+                            alignment: center;
+                            Toggle {
+                                label: Lang.t("Проверять обновления сам", "Check for updates automatically");
+                                checked: Store.update-auto;
+                                toggled(v) => {
+                                    Store.set-update-auto(v);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Card {
+                VerticalLayout {
+                    SettingRow {
                         icon: Icons.globe;
                         title: Lang.t("Язык", "Language");
                         text: Lang.t("Моды получают язык Modly и показывают тексты на нём, если умеют.", "Mods receive Modly's language and use it if they can.");

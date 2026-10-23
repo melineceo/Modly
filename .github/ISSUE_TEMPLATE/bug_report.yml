@@ -1,0 +1,35 @@
+name: Ошибка / Bug report
+description: Что-то работает не так / Something doesn't work
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что случилось / What happened
+      description: Что делали, что ждали и что получилось. / What you did, expected and got.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия Modly / Modly version
+      description: «Настройки → О программе» / Settings → About
+      placeholder: 0.2.0 Beta
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Игра и мод / Game and mod
+      placeholder: Hello Neighbor, Neighborly 1.0.0
+  - type: input
+    id: windows
+    attributes:
+      label: Windows
+      placeholder: Windows 11 23H2
+  - type: textarea
+    id: log
+    attributes:
+      label: Журнал / Log
+      description: "%APPDATA%\\Modly\\modly.log (для установщика — %TEMP%\\modly-setup.log). Уберите личное, если есть. / Remove anything private."
+      render: text

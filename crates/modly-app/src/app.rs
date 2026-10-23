@@ -30,20 +30,14 @@ mod games;
 mod maps;
 mod overlay;
 mod remote;
+mod update;
 pub use catalog::{forward_to_running, url_from_args};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Версия для людей: `0.1.0-beta` → «0.1.0 Beta».
 pub fn version_label() -> String {
-    match VERSION.split_once('-') {
-        Some((num, pre)) => {
-            let mut c = pre.chars();
-            let pre = c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default();
-            format!("{num} {pre}")
-        }
-        None => VERSION.to_owned(),
-    }
+    modly_core::update::label(VERSION)
 }
 
 const MAX_LOG: usize = 400;
@@ -119,6 +113,8 @@ pub struct App {
     maps: maps::MapsState,
     /// Пульт с телефона (см. `app/remote.rs`).
     remote: remote::Remote,
+    /// Обновления Modly (см. `app/update.rs`).
+    upd: update::UpdateState,
     /// Потоки tokio: сервер пульта запускается и после старта.
     rt: tokio::runtime::Handle,
 
@@ -178,6 +174,7 @@ pub fn init(ui: &AppWindow, rt: tokio::runtime::Handle) {
         game_art: games::GameArt::default(),
         overlay: overlay::Overlay::default(),
         remote: remote::Remote::default(),
+        upd: update::UpdateState::default(),
         maps: maps::MapsState::default(),
         builds: builds::Builds::default(),
         rt: rt.clone(),
@@ -217,6 +214,7 @@ pub fn init(ui: &AppWindow, rt: tokio::runtime::Handle) {
     app.apply_settings_to_ui();
     app.reload_mods(false);
     app.catalog_init();
+    app.update_init();
     catalog::start_open_listener(&rt);
     app.hub.set_trace(app.settings.developer_mode);
 
@@ -251,6 +249,7 @@ fn wire_callbacks(s: &Store) {
     games::wire(s);
     remote::wire(s);
     maps::wire(s);
+    update::wire(s);
     s.on_navigate(|p| with(move |a| a.navigate(&p)));
     s.on_search_changed(|t| with(move |a| a.set_search(t.to_string())));
     s.on_open_game(|id| with(move |a| a.open_game(&id)));

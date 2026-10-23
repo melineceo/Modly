@@ -31,6 +31,10 @@ pub struct Settings {
     pub overlay_hotkey: String,
     /// Пульт с телефона: веб-сервер в домашней сети (выключен, пока человек его не включит).
     pub remote: bool,
+    /// Канал обновлений: "" — как у текущей версии (бета получает беты), "stable" или "beta".
+    pub update_channel: String,
+    /// Не проверять обновления самому (по умолчанию Modly проверяет при запуске и раз в 6 часов).
+    pub no_update_check: bool,
 }
 
 impl Settings {

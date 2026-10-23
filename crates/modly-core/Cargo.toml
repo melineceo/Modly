@@ -14,6 +14,8 @@ tokio.workspace = true
 log.workspace = true
 anyhow = "1"
 sha2 = "0.10"
+# Подпись манифеста обновлений (Ed25519): только проверка, ключ выпусков вшит в программу.
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 # Распаковка пакетов из каталога: только deflate и только на Rust (miniz_oxide), без C-библиотек.
 zip = { version = "4", default-features = false, features = ["deflate-flate2"] }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
