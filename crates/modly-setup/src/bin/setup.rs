@@ -13,6 +13,9 @@ static PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/payload.zip"))
 fn main() {
     modly_setup::init_logging("setup");
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if modly_setup::escape_package_sandbox(&args) {
+        return;
+    }
     let dir = modly_setup::arg_value(&args, "--dir").map(PathBuf::from);
     if modly_setup::has_flag(&args, &["--silent", "/S", "/SILENT", "/VERYSILENT"]) {
         std::process::exit(silent(dir));

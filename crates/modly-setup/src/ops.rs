@@ -246,8 +246,17 @@ pub fn uninstall(dir: &Path, remove_data: bool, rep: Reporter) -> Result<()> {
     rep(Report::Status(t("Удаляем файлы…", "Deleting files…")));
     for name in OUR_FILES {
         let p = dir.join(name);
-        if p.is_file() {
-            std::fs::remove_file(&p).with_context(|| format!("{}", p.display()))?;
+        // файл может ещё держать только что закрытый Modly — несколько попыток
+        let mut tries = 0;
+        while p.is_file() {
+            match std::fs::remove_file(&p) {
+                Ok(()) => break,
+                Err(_) if tries < 20 => {
+                    tries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+                Err(e) => return Err(e).with_context(|| format!("{}", p.display())),
+            }
         }
     }
     for d in [NEW_DIR, OLD_DIR] {

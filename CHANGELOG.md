@@ -3,6 +3,22 @@
 Формат: раздел `## <версия> — <дата>`, в нём `### Русский` и `### English`. Отсюда `cargo xtask dist`
 берёт текст выпуска на GitHub и в обновлении внутри Modly.
 
+## 0.2.2-beta — 2026-10-23
+
+### Русский
+- Установщик и обновлятор, запущенные изнутри другого приложения (например, из терминала приложения из
+  Microsoft Store), перезапускаются через Проводник: Windows прятала записи такого запуска в песочницу
+  приложения, и Modly не появлялся в «Приложения и возможности».
+- Тихое удаление (`--uninstall --quiet` — так удаляют winget и другие менеджеры программ) больше не оставляет
+  файлы в папке Modly.
+
+### English
+- The installer and updater started from inside another app (for example, a terminal of a Microsoft Store app)
+  relaunch through Explorer: Windows sandboxed the registry writes of such a run, and Modly didn't show up in
+  Apps & features.
+- Quiet uninstall (`--uninstall --quiet`, used by winget and other package managers) no longer leaves files in the
+  Modly folder.
+
 ## 0.2.1-beta — 2026-10-23
 
 ### Русский

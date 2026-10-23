@@ -66,3 +66,23 @@ pub fn arg_value(args: &[String], name: &str) -> Option<String> {
 pub fn has_flag(args: &[String], names: &[&str]) -> bool {
     args.iter().any(|a| names.iter().any(|n| a.eq_ignore_ascii_case(n)))
 }
+
+/// Запущены изнутри «упакованного» приложения (см. [`system::in_packaged_tree`]) — перезапуститься
+/// вне его, иначе записи в реестр пропадут в его песочнице. `true` — новая копия запущена, этой — выйти.
+pub fn escape_package_sandbox(args: &[String]) -> bool {
+    if has_flag(args, &["--outside"]) || system::sandbox().is_some() || !system::in_packaged_tree() {
+        return false;
+    }
+    let mut again = args.to_vec();
+    again.push("--outside".to_owned());
+    match system::relaunch_outside(&again) {
+        Ok(()) => {
+            log::info!("started from a packaged app — relaunched outside it");
+            true
+        }
+        Err(e) => {
+            log::warn!("relaunch outside the app package: {e:#}");
+            false
+        }
+    }
+}

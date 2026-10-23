@@ -15,6 +15,9 @@ use std::process::exit;
 fn main() {
     modly_setup::init_logging("updater");
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if modly_setup::escape_package_sandbox(&args) {
+        return;
+    }
     let own_dir = modly_core::paths::exe_dir();
     let target = arg_value(&args, "--target").map(PathBuf::from).unwrap_or_else(|| own_dir.clone());
 
@@ -29,6 +32,10 @@ fn main() {
             }
         }
         let cleanup = from_temp.then(|| own_dir.clone());
+        // копия из папки Modly держит свой exe, пока не выйдет — дождаться её
+        if let Some(pid) = arg_value(&args, "--wait-pid").and_then(|p| p.parse().ok()) {
+            system::wait_exit(pid, 15_000);
+        }
         if quiet {
             let code = quiet_uninstall(&target);
             if let Some(dir) = cleanup {
@@ -55,10 +62,11 @@ fn relaunch_from_temp(target: &Path, quiet: bool) -> Result<i32> {
     std::fs::copy(std::env::current_exe()?, &exe).context("copy to temp")?;
     let mut cmd = std::process::Command::new(&exe);
     cmd.args(["--uninstall", "--from-temp", "--target"]).arg(target);
+    cmd.args(["--wait-pid", &std::process::id().to_string()]);
     if quiet {
         cmd.arg("--quiet");
-        return Ok(cmd.status()?.code().unwrap_or(1));
     }
+    // не ждём копию: пока этот exe работает, его файл в папке Modly не удалить
     cmd.spawn()?;
     Ok(0)
 }

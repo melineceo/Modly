@@ -359,6 +359,50 @@ pub fn relaunch_elevated(args: &str) -> Result<()> {
     Ok(())
 }
 
+/// Запущены из дерева процессов «упакованного» приложения (MSIX из `Program Files\WindowsApps`,
+/// например из терминала приложения из Microsoft Store)? Windows прячет записи в реестр таких процессов
+/// в песочницу приложения: Modly не появился бы в «Приложениях», а ссылки modly:// не заработали бы.
+pub fn in_packaged_tree() -> bool {
+    use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS};
+    let mut parent = std::collections::HashMap::new();
+    unsafe {
+        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return false };
+        let mut e = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        let mut ok = Process32FirstW(snap, &mut e).is_ok();
+        while ok {
+            parent.insert(e.th32ProcessID, e.th32ParentProcessID);
+            ok = Process32NextW(snap, &mut e).is_ok();
+        }
+        let _ = CloseHandle(snap);
+    }
+    let mut pid = std::process::id();
+    for _ in 0..16 {
+        let Some(&p) = parent.get(&pid) else { break };
+        if p == 0 || p == pid {
+            break;
+        }
+        if process_path(p).is_some_and(|path| path.display().to_string().to_lowercase().contains("\\windowsapps\\")) {
+            return true;
+        }
+        pid = p;
+    }
+    false
+}
+
+/// Перезапустить себя вне такого приложения: ярлык с нашими аргументами открывает Проводник,
+/// а он запускает программу как обычную.
+pub fn relaunch_outside(args: &[String]) -> Result<()> {
+    let exe = std::env::current_exe()?;
+    let line: Vec<String> = args.iter().map(|a| if a.contains(' ') || a.is_empty() { format!("\"{a}\"") } else { a.clone() }).collect();
+    let lnk = std::env::temp_dir().join(format!("modly-setup-{}.lnk", std::process::id()));
+    create_shortcut(&lnk, &exe, &line.join(" "), "Modly")?;
+    std::process::Command::new("explorer.exe").arg(&lnk).spawn().context("explorer")?;
+    // Проводнику нужно время открыть ярлык
+    std::thread::sleep(std::time::Duration::from_secs(4));
+    let _ = std::fs::remove_file(&lnk);
+    Ok(())
+}
+
 /// Запустить Modly. Из установщика с правами администратора — через Проводник, чтобы Modly
 /// работал с обычными правами пользователя.
 pub fn launch(exe: &Path, args: &[&str]) -> Result<std::process::Child> {
