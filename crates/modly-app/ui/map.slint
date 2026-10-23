@@ -1,0 +1,715 @@
+// Карты модов: просмотр с приближением, категории, список меток, действия мода.
+// Карту присылает сам мод (или кладёт в пакет): у каждой игры свой мир, и автор мода знает, как
+// он устроен. MapViewer — сама карта (и на странице "map", и во вкладке «Карта» оверлея),
+// MapSide — поиск, категории и список, MapsCard — карты игры на её странице.
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme, Lang } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Store, MapCard, MapActionItem } from "store.slint";
+import { Icon, IconTile, IconBtn, ConfirmBtn, TextField, SectionTitle, Badge } from "widgets.slint";
+
+// Кнопки действий мода — столбиком, во всю ширину подписи.
+component ActionList inherits VerticalLayout {
+    in property <[MapActionItem]> actions;
+    callback picked(string);
+    spacing: 6px;
+    alignment: start;
+    for a in root.actions: HorizontalLayout {
+        alignment: start;
+        ConfirmBtn {
+            text: a.label;
+            confirm-text: a.confirm;
+            kind: a.kind;
+            compact: true;
+            clicked => {
+                root.picked(a.id);
+            }
+        }
+    }
+}
+
+// Карта: колёсико — приближение к курсору, перетаскивание — сдвиг, двойной клик — ближе,
+// клик по метке — подпись с действиями мода, клик в пустое место — действия «сюда» (если мод их дал).
+// Метки не меняют размер при приближении.
+export component MapViewer inherits Rectangle {
+    in property <bool> compact: false;
+    background: #07090d;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: Theme.border;
+    clip: true;
+
+    property <float> max-zoom: 8;
+    // картинка, вписанная в окно целиком (zoom = 1)
+    property <length> fit-w: min(root.width, root.height * Store.map-ratio);
+    property <length> fit-h: root.fit-w / max(0.01, Store.map-ratio);
+    in-out property <float> zoom: 1;
+    // сдвиг от положения «по центру»
+    in-out property <length> pan-x: 0;
+    in-out property <length> pan-y: 0;
+    property <length> img-w: root.fit-w * root.zoom;
+    property <length> img-h: root.fit-h * root.zoom;
+    property <length> img-x: (root.width - root.img-w) / 2 + root.pan-x;
+    property <length> img-y: (root.height - root.img-h) / 2 + root.pan-y;
+    // служебное: точка под курсором и начало перетаскивания
+    property <float> ux;
+    property <float> uy;
+    property <length> drag-x;
+    property <length> drag-y;
+    property <bool> dragged;
+    property <bool> ready: Store.map-state == "ready";
+    // клик в пустое место: точка (доли картинки) и открыта ли подпись с действиями
+    property <bool> point-open;
+    property <float> pu;
+    property <float> pv;
+
+    function clamp-pan() {
+        root.pan-x = max(-max(0px, (root.img-w - root.width) / 2), min(max(0px, (root.img-w - root.width) / 2), root.pan-x));
+        root.pan-y = max(-max(0px, (root.img-h - root.height) / 2), min(max(0px, (root.img-h - root.height) / 2), root.pan-y));
+    }
+
+    function zoom-at(mx: length, my: length, z: float) {
+        root.ux = (mx - root.img-x) / root.img-w;
+        root.uy = (my - root.img-y) / root.img-h;
+        root.zoom = max(1, min(root.max-zoom, z));
+        root.pan-x = mx - root.ux * root.img-w - (root.width - root.img-w) / 2;
+        root.pan-y = my - root.uy * root.img-h - (root.height - root.img-h) / 2;
+        root.clamp-pan();
+    }
+
+    public function reset() {
+        root.zoom = 1;
+        root.pan-x = 0;
+        root.pan-y = 0;
+    }
+
+    // подъехать к метке (из списка или кнопкой «Где я»)
+    public function focus-on(i: int) {
+        if (i >= 0 && i < Store.map-pins.length) {
+            root.zoom = max(root.zoom, min(root.max-zoom, 3));
+            root.pan-x = root.img-w * (0.5 - Store.map-pins[i].x);
+            root.pan-y = root.img-h * (0.5 - Store.map-pins[i].y);
+            root.clamp-pan();
+        }
+    }
+    // окно поменяло размер — картинка не должна уехать
+    changed width => {
+        root.clamp-pan();
+    }
+    changed height => {
+        root.clamp-pan();
+    }
+
+    if root.ready: Image {
+        x: root.img-x;
+        y: root.img-y;
+        width: root.img-w;
+        height: root.img-h;
+        source: Store.map-image;
+        image-fit: fill;
+    }
+
+    if Store.map-state == "loading": Text {
+        text: Lang.t("Загружаю карту…", "Loading the map…");
+        color: Theme.text-3;
+        font-size: 13px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if Store.map-state == "error": Text {
+        width: root.width - 40px;
+        text: Store.map-error;
+        color: Theme.danger;
+        font-size: 13px;
+        wrap: word-wrap;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ta := TouchArea {
+        enabled: root.ready;
+        mouse-cursor: self.pressed && root.dragged ? MouseCursor.grabbing : MouseCursor.grab;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                root.drag-x = root.pan-x;
+                root.drag-y = root.pan-y;
+                root.dragged = false;
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                if (abs(self.mouse-x - self.pressed-x) + abs(self.mouse-y - self.pressed-y) > 4px) {
+                    root.dragged = true;
+                }
+                root.pan-x = root.drag-x + (self.mouse-x - self.pressed-x);
+                root.pan-y = root.drag-y + (self.mouse-y - self.pressed-y);
+                root.clamp-pan();
+            }
+        }
+        clicked => {
+            if (!root.dragged) {
+                Store.map-select(-1, false);
+                root.pu = (self.mouse-x - root.img-x) / root.img-w;
+                root.pv = (self.mouse-y - root.img-y) / root.img-h;
+                root.point-open = !root.point-open && Store.map-live && Store.map-click-actions.length > 0
+                    && root.pu >= 0 && root.pu <= 1 && root.pv >= 0 && root.pv <= 1;
+            }
+        }
+        double-clicked => {
+            root.point-open = false;
+            root.zoom-at(self.mouse-x, self.mouse-y, root.zoom * 2);
+        }
+        scroll-event(e) => {
+            root.zoom-at(self.mouse-x, self.mouse-y, root.zoom * (e.delta-y > 0 ? 1.2 : 1 / 1.2));
+            accept
+        }
+    }
+
+    // метки: булавка — место, точка — то, что движется (игрок, питомец)
+    for p[i] in Store.map-pins: Rectangle {
+        property <bool> on: i == Store.map-selected;
+        property <length> head: p.dot ? (root.compact ? 14px : 16px) : (root.compact ? 24px : 30px);
+        visible: root.ready && p.shown;
+        x: root.img-x + p.x * root.img-w - self.width / 2;
+        y: p.dot ? root.img-y + p.y * root.img-h - self.height / 2 : root.img-y + p.y * root.img-h - self.height;
+        width: self.head;
+        height: p.dot ? self.head : self.head + 8px;
+        accessible-role: button;
+        accessible-label: p.title;
+        accessible-action-default => {
+            root.point-open = false;
+            Store.map-select(i, false);
+        }
+        // ножка булавки
+        if !p.dot: Rectangle {
+            x: (parent.width - 3px) / 2;
+            y: parent.width - 4px;
+            width: 3px;
+            height: 11px;
+            border-radius: 1.5px;
+            background: p.color.darker(0.2);
+        }
+        // свечение выбранной (и всегда — у точки, чтобы её было видно на пёстрой карте)
+        if on || p.dot: Rectangle {
+            x: -5px;
+            y: -5px;
+            width: parent.width + 10px;
+            height: parent.width + 10px;
+            border-radius: self.width / 2;
+            background: p.color.transparentize(on ? 0.5 : 0.7);
+        }
+        Rectangle {
+            y: 0;
+            width: parent.width;
+            height: parent.width;
+            border-radius: self.width / 2;
+            background: pin-ta.has-hover ? p.color.brighter(0.15) : p.color;
+            border-width: 2px;
+            border-color: #ffffffe6;
+            drop-shadow-blur: 6px;
+            drop-shadow-color: #00000090;
+            drop-shadow-offset-y: 2px;
+            if !p.dot: Icon {
+                source: p.icon;
+                size: parent.width * 0.5;
+                tint: #ffffff;
+            }
+        }
+        pin-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.point-open = false;
+                Store.map-select(on ? -1 : i, false);
+            }
+        }
+    }
+
+    // подпись выбранной метки и её действия
+    if root.ready && Store.map-selected >= 0 && Store.map-selected < Store.map-pins.length: Rectangle {
+        property <length> px: root.img-x + Store.map-pins[Store.map-selected].x * root.img-w;
+        property <length> py: root.img-y + Store.map-pins[Store.map-selected].y * root.img-h;
+        property <length> gap: Store.map-pins[Store.map-selected].dot ? 18px : 46px;
+        property <bool> below: self.py - self.height - self.gap - 6px < 8px;
+        width: min(root.width - 16px, root.compact ? 260px : 300px);
+        height: pop.preferred-height;
+        x: max(8px, min(root.width - self.width - 8px, self.px - self.width / 2));
+        y: max(8px, min(root.height - self.height - 8px, self.below ? self.py + 14px : self.py - self.height - self.gap));
+        border-radius: 14px;
+        background: #0e1016f2;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: #00000099;
+        TouchArea { }
+        pop := VerticalLayout {
+            padding: 14px;
+            padding-right: 40px;
+            spacing: 5px;
+            if Store.map-pins[Store.map-selected].cat-label != "": Text {
+                text: Store.map-pins[Store.map-selected].cat-label;
+                color: Store.map-pins[Store.map-selected].color;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0.6px;
+            }
+            Text {
+                text: Store.map-pins[Store.map-selected].title;
+                color: Theme.text;
+                font-size: 15px;
+                font-weight: 700;
+                wrap: word-wrap;
+            }
+            if Store.map-pins[Store.map-selected].text != "": Text {
+                text: Store.map-pins[Store.map-selected].text;
+                color: Theme.text-2;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+            if Store.map-live && Store.map-actions.length > 0: ActionList {
+                padding-top: 6px;
+                actions: Store.map-actions;
+                picked(id) => {
+                    Store.map-action(id);
+                }
+            }
+            if !Store.map-live && Store.map-pins[Store.map-selected].has-actions: Text {
+                text: Lang.t("Запустите игру с модом — здесь появятся его действия.", "Start the game with the mod to use its actions here.");
+                color: Theme.text-3;
+                font-size: 11.5px;
+                wrap: word-wrap;
+            }
+        }
+        IconBtn {
+            x: parent.width - self.width - 6px;
+            y: 6px;
+            icon: Icons.x;
+            label: Lang.t("Закрыть", "Close");
+            size: 28px;
+            clicked => {
+                Store.map-select(-1, false);
+            }
+        }
+    }
+
+    // клик в пустое место: отметка и действия мода «сюда»
+    if root.ready && root.point-open && Store.map-live: Rectangle {
+        property <length> px: root.img-x + root.pu * root.img-w;
+        property <length> py: root.img-y + root.pv * root.img-h;
+        Rectangle {
+            x: parent.px - 9px;
+            y: parent.py - 9px;
+            width: 18px;
+            height: 18px;
+            border-radius: 9px;
+            border-width: 2px;
+            border-color: #ffffff;
+            background: Theme.accent.transparentize(0.4);
+        }
+        card := Rectangle {
+            property <bool> below: parent.py - self.height - 22px < 8px;
+            width: min(root.width - 16px, 240px);
+            height: point-list.preferred-height;
+            x: max(8px, min(root.width - self.width - 8px, parent.px - self.width / 2));
+            y: max(8px, min(root.height - self.height - 8px, self.below ? parent.py + 16px : parent.py - self.height - 16px));
+            border-radius: 14px;
+            background: #0e1016f2;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000099;
+            TouchArea { }
+            point-list := VerticalLayout {
+                padding: 12px;
+                padding-right: 38px;
+                spacing: 8px;
+                Text {
+                    text: Lang.t("Эта точка", "This spot");
+                    color: Theme.text-3;
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 0.6px;
+                }
+                ActionList {
+                    actions: Store.map-click-actions;
+                    picked(id) => {
+                        Store.map-click-action(id, root.pu, root.pv);
+                        root.point-open = false;
+                    }
+                }
+            }
+            IconBtn {
+                x: parent.width - self.width - 6px;
+                y: 6px;
+                icon: Icons.x;
+                label: Lang.t("Закрыть", "Close");
+                size: 26px;
+                clicked => {
+                    root.point-open = false;
+                }
+            }
+        }
+    }
+
+    // приближение и «Где я»
+    if root.ready: VerticalLayout {
+        x: root.width - self.width - 10px;
+        y: root.height - self.preferred-height - 10px;
+        width: 38px;
+        spacing: 6px;
+        if Store.map-focus-index >= 0: Rectangle {
+            height: 38px;
+            border-radius: 11px;
+            background: me-ta.has-hover ? #1b2030f2 : #0e1016e6;
+            border-width: 1px;
+            border-color: Theme.accent.transparentize(0.4);
+            accessible-role: button;
+            accessible-label: Lang.t("Где я", "Where am I");
+            accessible-action-default => {
+                root.focus-on(Store.map-focus-index);
+            }
+            Icon {
+                source: Icons.crosshair;
+                size: 17px;
+                tint: Theme.accent-2;
+            }
+            me-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.focus-on(Store.map-focus-index);
+                }
+            }
+        }
+        for b in [
+            { icon: Icons.plus, label: Lang.t("Приблизить", "Zoom in"), k: 1.6 },
+            { icon: Icons.minus, label: Lang.t("Отдалить", "Zoom out"), k: 1 / 1.6 },
+            { icon: Icons.grid, label: Lang.t("Вся карта", "Whole map"), k: 0 },
+        ]: Rectangle {
+            height: 38px;
+            border-radius: 11px;
+            background: zoom-ta.has-hover ? #1b2030f2 : #0e1016e6;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            accessible-role: button;
+            accessible-label: b.label;
+            accessible-action-default => {
+                zoom-ta.clicked();
+            }
+            Icon {
+                source: b.icon;
+                size: 17px;
+                tint: Theme.text;
+            }
+            zoom-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    if (b.k == 0) {
+                        root.reset();
+                    } else {
+                        root.zoom-at(root.width / 2, root.height / 2, root.zoom * b.k);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Поиск, категории и список меток.
+export component MapSide inherits VerticalLayout {
+    // метку выбрали в списке: MapPage выделяет её и подводит к ней карту
+    callback pick(int);
+    spacing: 12px;
+    TextField {
+        text: Store.map-query;
+        placeholder: Lang.t("Найти метку", "Find a marker");
+        icon: Icons.search;
+        show-icon: true;
+        edited(t) => {
+            Store.map-search(t);
+        }
+    }
+    // категории — по две в ряд
+    cats := Rectangle {
+        property <int> rows: ceil(Store.map-cats.length / 2);
+        height: self.rows * 38px - (self.rows > 0 ? 6px : 0);
+        for c[i] in Store.map-cats: Rectangle {
+            x: mod(i, 2) * (cats.width + 6px) / 2;
+            y: floor(i / 2) * 38px;
+            width: (cats.width - 6px) / 2;
+            height: 32px;
+            border-radius: 10px;
+            background: c.on ? c.color.transparentize(0.82) : cat-ta.has-hover ? Theme.surface-3 : transparent;
+            border-width: 1px;
+            border-color: c.on ? c.color.transparentize(0.3) : Theme.border;
+            accessible-role: checkbox;
+            accessible-label: c.label;
+            accessible-checkable: true;
+            accessible-checked: c.on;
+            accessible-action-default => {
+                Store.map-toggle-cat(c.id);
+            }
+            HorizontalLayout {
+                padding-left: 9px;
+                padding-right: 9px;
+                spacing: 7px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: c.icon;
+                        size: 15px;
+                        tint: c.on ? c.color : Theme.text-3;
+                    }
+                }
+                Text {
+                    horizontal-stretch: 1;
+                    text: c.label;
+                    color: c.on ? Theme.text : Theme.text-3;
+                    font-size: 12.5px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                Text {
+                    text: c.count;
+                    color: Theme.text-3;
+                    font-size: 11.5px;
+                    vertical-alignment: center;
+                }
+            }
+            cat-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    Store.map-toggle-cat(c.id);
+                }
+            }
+        }
+    }
+    ScrollView {
+        vertical-stretch: 1;
+        VerticalLayout {
+            alignment: start;
+            spacing: 2px;
+            for r in Store.map-rows: Rectangle {
+                height: 46px;
+                accessible-role: button;
+                accessible-label: r.title + (r.cat-label != "" ? ", " + r.cat-label : "");
+                accessible-action-default => {
+                    root.pick(r.index);
+                }
+                border-radius: 11px;
+                background: r.index == Store.map-selected ? r.color.transparentize(0.86) : row-ta.has-hover ? Theme.surface-2 : transparent;
+                border-width: 1px;
+                border-color: r.index == Store.map-selected ? r.color.transparentize(0.4) : transparent;
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 10px;
+                    VerticalLayout {
+                        alignment: center;
+                        IconTile {
+                            icon: r.icon;
+                            tint: r.color;
+                            size: 30px;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: r.title;
+                            color: Theme.text;
+                            font-size: 13px;
+                            font-weight: 600;
+                            overflow: elide;
+                        }
+                        if r.cat-label != "": Text {
+                            text: r.cat-label;
+                            color: Theme.text-3;
+                            font-size: 11.5px;
+                            overflow: elide;
+                        }
+                    }
+                }
+                row-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.pick(r.index);
+                    }
+                }
+            }
+            if Store.map-state == "ready" && Store.map-rows.length == 0: Text {
+                text: Store.map-query != "" ? Lang.t("Ничего не нашлось.", "Nothing found.") : Lang.t("Все категории скрыты.", "All categories are hidden.");
+                color: Theme.text-3;
+                font-size: 12.5px;
+            }
+        }
+    }
+}
+
+// Страница карты.
+export component MapPage inherits Rectangle {
+    property <bool> wide: self.width >= 900px;
+    VerticalLayout {
+        padding: 24px;
+        padding-top: 18px;
+        spacing: 14px;
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                IconBtn {
+                    icon: Icons.chevron-left;
+                    label: Lang.t("Назад к игре", "Back to the game");
+                    size: 36px;
+                    clicked => {
+                        Store.close-map();
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: Store.map-title;
+                    color: Theme.text;
+                    font-size: 24px;
+                    font-weight: 800;
+                    overflow: elide;
+                }
+                Text {
+                    text: Store.map-subtitle;
+                    color: Theme.text-3;
+                    font-size: 12.5px;
+                    overflow: elide;
+                }
+            }
+            // живая карта — мод подключён: метки двигаются, действия работают
+            VerticalLayout {
+                alignment: center;
+                Badge {
+                    text: Store.map-live ? Lang.t("Мод подключён", "Mod live") : Lang.t("Без игры", "Game not running");
+                    tone: Store.map-live ? "success" : "default";
+                    dot: Store.map-live;
+                }
+            }
+        }
+        if root.wide: HorizontalLayout {
+            spacing: 16px;
+            vertical-stretch: 1;
+            wide-view := MapViewer {
+                horizontal-stretch: 1;
+            }
+            MapSide {
+                width: 290px;
+                pick(i) => {
+                    Store.map-select(i, true);
+                    wide-view.focus-on(i);
+                }
+            }
+        }
+        if !root.wide: VerticalLayout {
+            spacing: 14px;
+            vertical-stretch: 1;
+            narrow-view := MapViewer {
+                vertical-stretch: 3;
+            }
+            MapSide {
+                vertical-stretch: 2;
+                pick(i) => {
+                    Store.map-select(i, true);
+                    narrow-view.focus-on(i);
+                }
+            }
+        }
+    }
+}
+
+// Карты игры от её модов — на странице игры, под модами (только если у модов есть карты).
+export component MapsCard inherits VerticalLayout {
+    alignment: start;
+    spacing: 12px;
+    SectionTitle {
+        text: Lang.t("Карты", "Maps");
+        hint: "" + Store.game-maps.length;
+    }
+    for m in Store.game-maps: Rectangle {
+        height: 74px;
+        border-radius: Theme.radius;
+        background: map-ta.has-hover ? Theme.surface-2 : Theme.surface;
+        border-width: 1px;
+        border-color: map-ta.has-hover ? Theme.border-strong : Theme.border;
+        animate background, border-color { duration: 120ms; }
+        accessible-role: button;
+        accessible-label: m.title;
+        accessible-action-default => {
+            Store.open-map(m.key);
+        }
+        HorizontalLayout {
+            padding: 9px;
+            spacing: 12px;
+            Rectangle {
+                width: 84px;
+                border-radius: 10px;
+                clip: true;
+                background: #0b0d14;
+                if m.has-thumb: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: m.thumb;
+                    image-fit: cover;
+                }
+                if !m.has-thumb: Icon {
+                    source: Icons.map-pin;
+                    size: 22px;
+                    tint: Theme.text-3;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                spacing: 3px;
+                HorizontalLayout {
+                    spacing: 7px;
+                    Text {
+                        text: m.title;
+                        color: Theme.text;
+                        font-size: 14px;
+                        font-weight: 600;
+                        overflow: elide;
+                    }
+                    // мод подключён — метки живые
+                    if m.live: VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 7px;
+                            height: 7px;
+                            border-radius: 3.5px;
+                            background: Theme.success;
+                        }
+                    }
+                }
+                Text {
+                    text: m.markers + Lang.t(" меток · ", " markers · ") + m.author;
+                    color: Theme.text-3;
+                    font-size: 12px;
+                    overflow: elide;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: Icons.chevron-right;
+                    size: 16px;
+                    tint: Theme.text-3;
+                }
+            }
+        }
+        map-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                Store.open-map(m.key);
+            }
+        }
+    }
+}

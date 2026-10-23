@@ -1,0 +1,201 @@
+import { Theme, Lang } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Store, GameCard, ModCard, SiteCard, OptionItem, PresetItem, LiveControl, LiveSection, LivePage, SessionTab, Toast, LogLine, MapCard, MapPin, MapCat, MapRow, MapActionItem } from "store.slint";
+import { Icon, IconBtn, Btn } from "widgets.slint";
+import { Sidebar } from "sidebar.slint";
+import { HomePage, GamePage, ModsPage, CatalogPage, DevPage, SettingsPage, ModLogo } from "pages.slint";
+import { MapPage } from "map.slint";
+
+export { OverlayWindow } from "overlay.slint";
+export { Store, Lang, GameCard, ModCard, SiteCard, OptionItem, PresetItem, LiveControl, LiveSection, LivePage, SessionTab, Toast, LogLine, MapCard, MapPin, MapCat, MapRow, MapActionItem }
+
+// «Установить мод с сайта?» — для ссылок modly://install/… : сайт (или любая страница) не может
+// поставить мод молча, человек всегда подтверждает здесь, в Modly.
+component ConfirmInstall inherits Rectangle {
+    background: #05060ac0;
+    TouchArea { }
+    Rectangle {
+        width: 460px;
+        height: box.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 18px;
+        background: Theme.surface;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 40px;
+        drop-shadow-color: #000000a0;
+        drop-shadow-offset-y: 12px;
+        box := VerticalLayout {
+            padding: 26px;
+            spacing: 14px;
+            HorizontalLayout {
+                spacing: 14px;
+                ModLogo {
+                    letter: Store.confirm-mod.letter;
+                    accent: Store.confirm-mod.accent;
+                    logo: Store.confirm-mod.logo;
+                    has-logo: Store.confirm-mod.has-logo;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 3px;
+                    Text {
+                        text: Store.confirm-mod.title;
+                        color: Theme.text;
+                        font-size: 18px;
+                        font-weight: 800;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: Store.confirm-mod.game + (Store.confirm-mod.version != "" ? "  ·  v" + Store.confirm-mod.version : "");
+                        color: Theme.text-3;
+                        font-size: 12.5px;
+                        overflow: elide;
+                    }
+                }
+            }
+            Text {
+                text: Lang.t("Установить мод с ", "Install a mod from ") + Store.site-host + "?";
+                color: Theme.text;
+                font-size: 15px;
+                font-weight: 700;
+            }
+            if Store.confirm-mod.tagline != "": Text {
+                text: Store.confirm-mod.tagline;
+                color: Theme.text-2;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+            Text {
+                text: Lang.t("Modly скачает пакет, сверит SHA-256 с выпуском, который одобрил модератор, и поставит мод в игру. Моды — это код, который запускает игра: ставьте моды авторов, которым доверяете.", "Modly downloads the package, checks its SHA-256 against the release a moderator approved, and installs the mod into the game. Mods are code the game runs: install mods from authors you trust.");
+                color: Theme.text-3;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10px;
+                Btn {
+                    text: Lang.t("Отмена", "Cancel");
+                    kind: "ghost";
+                    clicked => {
+                        Store.confirm-cancel();
+                    }
+                }
+                Btn {
+                    text: Lang.t("Установить", "Install");
+                    icon: Icons.download;
+                    show-icon: true;
+                    kind: "primary";
+                    enabled: Store.confirm-mod.modly;
+                    clicked => {
+                        Store.confirm-install();
+                    }
+                }
+            }
+        }
+    }
+}
+
+component ToastView inherits Rectangle {
+    in property <Toast> t;
+    property <color> c: Theme.tone(root.t.tone);
+    width: 360px;
+    border-radius: 14px;
+    background: #171b27f2;
+    border-width: 1px;
+    border-color: root.c.transparentize(0.6);
+    drop-shadow-blur: 30px;
+    drop-shadow-color: #00000090;
+    drop-shadow-offset-y: 8px;
+    HorizontalLayout {
+        padding: 14px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                width: 30px;
+                height: 30px;
+                border-radius: 10px;
+                background: root.c.transparentize(0.82);
+                Icon {
+                    source: root.t.tone == "success" ? Icons.check : root.t.tone == "danger" || root.t.tone == "warning" ? Icons.alert : Icons.info;
+                    size: 16px;
+                    tint: root.c;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            if root.t.title != "": Text {
+                text: root.t.title;
+                color: Theme.text;
+                font-size: 13px;
+                font-weight: 700;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.t.text;
+                color: Theme.text-2;
+                font-size: 12.5px;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: start;
+            IconBtn {
+                icon: Icons.x;
+                size: 26px;
+                clicked => {
+                    Store.dismiss-toast(root.t.id);
+                }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Modly";
+    icon: @image-url("icons/logo.svg");
+    preferred-width: 1280px;
+    preferred-height: 820px;
+    min-width: 1040px;
+    min-height: 660px;
+    background: Theme.bg;
+    default-font-family: "Segoe UI";
+    default-font-size: 13px;
+
+    HorizontalLayout {
+        Sidebar { }
+        Rectangle {
+            horizontal-stretch: 1;
+            if Store.page == "home": HomePage { }
+            if Store.page == "game": GamePage { }
+            if Store.page == "mods": ModsPage { }
+            if Store.page == "catalog": CatalogPage { }
+            if Store.page == "dev": DevPage { }
+            if Store.page == "settings": SettingsPage { }
+            if Store.page == "map": MapPage { }
+        }
+    }
+
+    if Store.confirm-open: ConfirmInstall {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    // уведомления — справа снизу
+    VerticalLayout {
+        x: parent.width - 360px - 24px;
+        y: parent.height - self.height - 24px;
+        width: 360px;
+        height: self.preferred-height;
+        spacing: 10px;
+        for t in Store.toasts: ToastView {
+            t: t;
+        }
+    }
+}

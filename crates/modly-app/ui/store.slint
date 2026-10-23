@@ -1,0 +1,385 @@
+// Данные и действия интерфейса. Заполняются из Rust (src/main.rs, src/ui_state.rs).
+
+// Карта игры от мода — в списке на странице игры. key — «мод/карта»; live — мод сейчас подключён.
+export struct MapCard {
+    key: string,
+    title: string,
+    author: string,
+    markers: int,
+    thumb: image,
+    has-thumb: bool,
+    live: bool,
+}
+
+// Метка на открытой карте: x, y — доли картинки (0…1); dot — точка (игрок, питомец), иначе булавка.
+export struct MapPin {
+    x: float,
+    y: float,
+    title: string,
+    text: string,
+    cat-label: string,
+    color: color,
+    icon: image,
+    shown: bool,
+    dot: bool,
+    has-actions: bool,
+}
+
+// Действие на карте: кнопка у метки или по клику в пустое место.
+// kind — вид кнопки (primary | danger | success | secondary), confirm — текст второго нажатия.
+export struct MapActionItem {
+    id: string,
+    label: string,
+    kind: string,
+    confirm: string,
+}
+
+// Категория меток (её можно скрыть).
+export struct MapCat {
+    id: string,
+    label: string,
+    color: color,
+    icon: image,
+    count: int,
+    on: bool,
+}
+
+// Строка списка меток (только видимые): index — номер в map-pins.
+export struct MapRow {
+    index: int,
+    title: string,
+    cat-label: string,
+    color: color,
+    icon: image,
+}
+
+export struct GameCard {
+    id: string,
+    name: string,
+    folder: string,
+    engine: string,
+    icon: image,
+    has-icon: bool,
+    accent: color,
+    running: bool,
+    live: bool,
+    mods-installed: int,
+    mods-total: int,
+    missing: bool,
+    // обложки из кэша Steam: шапка — для плитки, широкий баннер — для страницы игры
+    cover: image,
+    has-cover: bool,
+    hero: image,
+    has-hero: bool,
+    // игра из Steam (запуск через Steam)
+    steam: bool,
+}
+
+export struct ModCard {
+    id: string,
+    name: string,
+    version: string,
+    author: string,
+    description: string,
+    game-name: string,
+    // none | installed | outdated | broken | unbuilt
+    state: string,
+    state-text: string,
+    live: bool,
+    can-build: bool,
+    busy: bool,
+    installed-count: int,
+    copies: int,
+    // сборка игры у этой копии: "" (мод сборки не указывает) | ok | unknown | none (только автору)
+    build-state: string,
+    build-text: string,
+    // автору (режим разработчика): дописать сборку этой копии в modly.json
+    can-add-build: bool,
+}
+
+// Мод из каталога сайта mods.hackerstone.xyz.
+export struct SiteCard {
+    slug: string,
+    title: string,
+    game: string,
+    tagline: string,
+    letter: string,
+    accent: color,
+    // логотип (уже круглый) и обложка с сайта; пока их нет — буква на цвете мода и свечение
+    logo: image,
+    has-logo: bool,
+    cover: image,
+    has-cover: bool,
+    version: string,
+    downloads: int,
+    likes: int,
+    liked: bool,
+    // есть пакет для Modly (ZIP с modly.json)
+    modly: bool,
+    // у выпуска есть файлы: без пакета Modly их можно скачать в «ЗагрузкиModly»
+    downloadable: bool,
+    featured: bool,
+    // none | installed | outdated | busy | downloaded (файл мода без пакета уже скачан)
+    state: string,
+    progress: float,
+    // игра мода есть в библиотеке (Steam или нет); такие моды каталог показывает первыми
+    owned: bool,
+    owned-steam: bool,
+}
+
+export struct OptionItem {
+    value: string,
+    label: string,
+    icon: image,
+    has-icon: bool,
+    selected: bool,
+}
+
+export struct PresetItem {
+    value: float,
+    label: string,
+    selected: bool,
+}
+
+export struct LiveControl {
+    id: string,
+    // toggle | button | slider | number | text | segmented | chips | stat | progress | note | separator
+    kind: string,
+    label: string,
+    description: string,
+    icon: image,
+    has-icon: bool,
+    enabled: bool,
+    checked: bool,
+    value: float,
+    text: string,
+    min: float,
+    max: float,
+    step: float,
+    unit: string,
+    presets: [PresetItem],
+    options: [OptionItem],
+    tone: string,
+    confirm: string,
+    placeholder: string,
+    // горячая клавиша (toggle, button): "F1", "Ctrl+Num1" или ""; busy — её заняла другая программа
+    hotkey: string,
+    hotkey-busy: bool,
+}
+
+export struct LiveSection {
+    id: string,
+    title: string,
+    description: string,
+    controls: [LiveControl],
+}
+
+export struct LivePage {
+    id: string,
+    title: string,
+    icon: image,
+    has-icon: bool,
+}
+
+export struct SessionTab {
+    id: int,
+    title: string,
+    subtitle: string,
+    version: string,
+    sdk: string,
+    game: string,
+    status: string,
+    status-tone: string,
+}
+
+export struct Toast {
+    id: int,
+    tone: string,
+    title: string,
+    text: string,
+}
+
+export struct LogLine {
+    time: string,
+    source: string,
+    text: string,
+    tone: string,
+}
+
+export global Store {
+    // навигация: home | game | mods | catalog | dev | settings
+    in-out property <string> page: "home";
+
+    // библиотека: все игры (боковая панель) и отфильтрованные поиском (сетка)
+    in-out property <[GameCard]> games;
+    in-out property <[GameCard]> library;
+    in-out property <string> search;
+    in-out property <bool> scanning;
+    in-out property <int> live-count;
+
+    // открытая игра
+    in-out property <GameCard> game;
+    in-out property <[ModCard]> game-mods;
+    // карты игры с сайта: loading | ready | error ("" — ещё не спрашивали)
+    in-out property <[MapCard]> game-maps;
+
+    // открытая карта (страница "map" и вкладка «Карта» в оверлее)
+    in-out property <string> map-key;
+    // мод подключён: его действия на карте доступны
+    in-out property <bool> map-live;
+    // действия выбранной метки и действия по клику в пустое место
+    in-out property <[MapActionItem]> map-actions;
+    in-out property <[MapActionItem]> map-click-actions;
+    // метка «Где я» (обычно игрок): номер в map-pins или -1
+    in-out property <int> map-focus-index: -1;
+    in-out property <string> map-title;
+    in-out property <string> map-subtitle;
+    in-out property <string> map-description;
+    // loading | ready | error
+    in-out property <string> map-state;
+    in-out property <string> map-error;
+    in-out property <image> map-image;
+    // ширина картинки к высоте
+    in-out property <float> map-ratio: 1.5;
+    in-out property <[MapPin]> map-pins;
+    in-out property <[MapCat]> map-cats;
+    in-out property <[MapRow]> map-rows;
+    in-out property <int> map-selected: -1;
+    in-out property <string> map-query;
+
+    // панель управления модом (для открытой игры)
+    in-out property <[SessionTab]> live-tabs;
+    in-out property <int> live-tab;
+    in-out property <bool> live-connected;
+    in-out property <string> live-title;
+    in-out property <string> live-subtitle;
+    in-out property <string> live-status;
+    in-out property <string> live-status-tone;
+    in-out property <bool> live-paused;
+    in-out property <[LivePage]> live-pages;
+    in-out property <int> live-page;
+    in-out property <[LiveSection]> live-sections;
+    // id элемента, которому сейчас назначают горячую клавишу ("" — никому)
+    in-out property <string> hotkey-capture;
+
+    // все моды
+    in-out property <[ModCard]> all-mods;
+    in-out property <[string]> mod-errors;
+
+    // для мододелов
+    in-out property <[SessionTab]> sessions;
+    in-out property <[LogLine]> log;
+    in-out property <string> pipe-name;
+
+    // настройки
+    in-out property <string> lang-setting;
+    in-out property <bool> developer-mode;
+    in-out property <bool> gpu-rendering;
+    // связка с WeMod: включена ли и найден ли WeMod на этом ПК
+    in-out property <bool> wemod;
+    in-out property <bool> wemod-available;
+    // клавиша оверлея в игре ("off" — выключен)
+    in-out property <string> overlay-hotkey;
+    // пульт с телефона: включён ли, адрес для телефона (с ключом), QR-код этого адреса, ошибка запуска
+    in-out property <bool> remote;
+    in-out property <string> remote-url;
+    in-out property <image> remote-qr;
+    in-out property <string> remote-error;
+    in-out property <[string]> mod-dirs;
+    in-out property <string> data-dir;
+    in-out property <string> version;
+    // ok | error | starting
+    in-out property <string> hub-state: "starting";
+    in-out property <string> hub-text;
+
+    // каталог сайта модов: idle | loading | ok | error
+    in-out property <[SiteCard]> catalog;
+    in-out property <string> catalog-state: "idle";
+    in-out property <string> catalog-error;
+    in-out property <string> catalog-search;
+    in-out property <string> site-host;
+    // вход на сайт модов (необязательный); account-busy — ждём подтверждения в браузере
+    in-out property <bool> signed-in;
+    in-out property <string> account-nick;
+    in-out property <bool> account-busy;
+    // ссылка modly://install/<адрес> с сайта: спросить, ставить ли
+    in-out property <bool> confirm-open;
+    in-out property <SiteCard> confirm-mod;
+
+    in-out property <[Toast]> toasts;
+
+    callback navigate(string);
+    callback search-changed(string);
+    callback open-game(string);
+    callback launch-game(string);
+    callback open-game-folder(string);
+    callback remove-game(string);
+    callback add-game();
+    callback scan-games();
+
+    // «Сделать мод»: проект мода для этой игры (id игры)
+    callback create-mod(string);
+    callback open-map(string);
+    callback close-map();
+    callback map-toggle-cat(string);
+    callback map-search(string);
+    // выбрать метку (-1 — снять выбор); второй аргумент — выбрана в списке
+    callback map-select(int, bool);
+    // действие выбранной метки
+    callback map-action(string);
+    // действие по клику в пустое место: id и точка в долях картинки
+    callback map-click-action(string, float, float);
+    callback install-mod(string);
+    callback uninstall-mod(string);
+    callback build-mod(string);
+    callback add-build(string);
+    callback open-mod-folder(string);
+    callback install-everywhere(string);
+    callback open-link(string);
+
+    callback live-select-tab(int);
+    callback live-select-page(int);
+    callback live-set-bool(string, bool);
+    callback live-drag-number(string, float);
+    callback live-set-number(string, float);
+    callback live-set-text(string, string);
+    callback live-pick(string, string);
+    callback live-invoke(string);
+    // горячие клавиши: начать захват, отменить, снять клавишу, нажатое сочетание (текст, Ctrl, Alt, Shift, Win)
+    callback hotkey-capture-start(string);
+    callback hotkey-capture-cancel(string);
+    callback hotkey-clear(string);
+    callback hotkey-pressed(string, string, bool, bool, bool, bool);
+
+    callback set-language(string);
+    callback set-developer-mode(bool);
+    callback set-gpu-rendering(bool);
+    callback set-wemod(bool);
+    callback open-wemod();
+    callback set-overlay-hotkey(string);
+    callback set-remote(bool);
+    callback reset-remote();
+    callback add-mod-dir();
+    callback remove-mod-dir(int);
+    callback open-data-dir();
+    callback reload-mods();
+    callback dismiss-toast(int);
+    callback clear-log();
+    callback copy-text(string);
+
+    callback catalog-refresh();
+    callback catalog-search-changed(string);
+    callback catalog-install(string);
+    callback catalog-download(string);
+    callback catalog-reveal(string);
+    callback catalog-open(string);
+    callback catalog-goto(string);
+    callback catalog-like(string);
+    // карточка мода показалась на экране (true) — загрузить её логотип и обложку; ушла (false)
+    callback catalog-art(string, bool);
+    callback account-login();
+    callback account-cancel();
+    callback account-logout();
+    callback confirm-install();
+    callback confirm-cancel();
+}

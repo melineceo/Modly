@@ -1,0 +1,24 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Приватные моды: живут рядом с Modly, но в репозиторий не попадают.
+# Creatly — готовый закрытый мод, НИКОГДА не выкладывать.
+/mods/creatly/
+/mods/private/
+# Neighborly — закрытый мод для Hello Neighbor, тоже не выкладывать.
+/mods/neighborly/
+
+# Сборки C# и C++ примеров
+/sdk/**/bin/
+/sdk/**/obj/
+/examples/**/bin/
+/examples/**/obj/
+
+# Системное
+/.claude/
+Thumbs.db
+desktop.ini
+.vs/
+.vscode/
+*.log

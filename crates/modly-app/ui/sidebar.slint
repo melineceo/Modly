@@ -1,0 +1,320 @@
+import { Theme, Lang } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Store, GameCard } from "store.slint";
+import { Icon } from "widgets.slint";
+
+component NavItem inherits Rectangle {
+    in property <image> icon;
+    in property <string> text;
+    in property <bool> active;
+    in property <int> counter: 0;
+    callback clicked();
+    accessible-role: tab;
+    accessible-label: root.text;
+    accessible-checkable: true;
+    accessible-checked: root.active;
+    accessible-action-default => {
+        root.clicked();
+    }
+    height: 40px;
+    border-radius: 11px;
+    background: root.active ? Theme.surface-3 : ta.has-hover ? #ffffff07 : transparent;
+    animate background { duration: 120ms; }
+
+    // полоска активного пункта
+    Rectangle {
+        x: 0;
+        width: 3px;
+        height: root.active ? 18px : 0;
+        y: (parent.height - self.height) / 2;
+        border-radius: 2px;
+        background: @linear-gradient(180deg, #8b5cf6 0%, #22d3ee 100%);
+        animate height { duration: 160ms; easing: ease-out; }
+    }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: root.icon;
+                size: 18px;
+                tint: root.active ? Theme.text : Theme.text-3;
+            }
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.text;
+            color: root.active ? Theme.text : Theme.text-2;
+            font-size: 13.5px;
+            font-weight: root.active ? 600 : 500;
+            vertical-alignment: center;
+        }
+        if root.counter > 0: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                height: 20px;
+                min-width: 20px;
+                border-radius: 10px;
+                background: Theme.success.transparentize(0.8);
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    Text {
+                        text: root.counter;
+                        color: Theme.success;
+                        font-size: 11px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component GameItem inherits Rectangle {
+    in property <GameCard> g;
+    in property <bool> active;
+    callback clicked();
+    accessible-role: list-item;
+    accessible-label: root.g.name + " " + root.g.folder;
+    accessible-action-default => {
+        root.clicked();
+    }
+    height: 46px;
+    border-radius: 11px;
+    background: root.active ? Theme.surface-3 : ta.has-hover ? #ffffff07 : transparent;
+    animate background { duration: 120ms; }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 10px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 30px;
+                height: 30px;
+                border-radius: 9px;
+                background: root.g.accent.transparentize(0.75);
+                clip: true;
+                if root.g.has-icon: Image {
+                    source: root.g.icon;
+                    width: 24px;
+                    height: 24px;
+                    image-fit: contain;
+                }
+                if !root.g.has-icon: Icon {
+                    source: Icons.gamepad;
+                    size: 16px;
+                    tint: root.g.accent.brighter(0.4);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 0px;
+            Text {
+                text: root.g.name;
+                color: root.active ? Theme.text : Theme.text-2;
+                font-size: 13px;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.g.folder;
+                color: Theme.text-3;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+        if root.g.running || root.g.live: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.g.live ? Theme.success : Theme.accent-2;
+                drop-shadow-blur: 8px;
+                drop-shadow-color: root.g.live ? #34d399 : #22d3ee;
+            }
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Sidebar inherits Rectangle {
+    width: 252px;
+    background: Theme.sidebar;
+
+    // тонкая граница справа
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        background: Theme.border;
+    }
+
+    VerticalLayout {
+        padding: 14px;
+        padding-top: 18px;
+        spacing: 4px;
+
+        // логотип
+        HorizontalLayout {
+            padding-left: 6px;
+            padding-bottom: 18px;
+            spacing: 11px;
+            Image {
+                source: @image-url("icons/logo.svg");
+                width: 34px;
+                height: 34px;
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 0px;
+                Text {
+                    text: "Modly";
+                    color: Theme.text;
+                    font-size: 19px;
+                    font-weight: 800;
+                    letter-spacing: 0.2px;
+                }
+                Text {
+                    text: Lang.t("моды без лишнего", "mods made simple");
+                    color: Theme.text-3;
+                    font-size: 11px;
+                }
+            }
+        }
+
+        NavItem {
+            icon: Icons.home;
+            text: Lang.t("Библиотека", "Library");
+            active: Store.page == "home";
+            clicked => {
+                Store.navigate("home");
+            }
+        }
+        NavItem {
+            icon: Icons.puzzle;
+            text: Lang.t("Моды", "Mods");
+            active: Store.page == "mods";
+            clicked => {
+                Store.navigate("mods");
+            }
+        }
+        NavItem {
+            icon: Icons.globe;
+            text: Lang.t("Каталог", "Catalog");
+            active: Store.page == "catalog";
+            clicked => {
+                Store.navigate("catalog");
+            }
+        }
+        NavItem {
+            icon: Icons.code;
+            text: Lang.t("Для мододелов", "For modders");
+            active: Store.page == "dev";
+            counter: Store.sessions.length;
+            clicked => {
+                Store.navigate("dev");
+            }
+        }
+        NavItem {
+            icon: Icons.sliders;
+            text: Lang.t("Настройки", "Settings");
+            active: Store.page == "settings";
+            clicked => {
+                Store.navigate("settings");
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-top: 22px;
+            padding-bottom: 6px;
+            Text {
+                text: Lang.t("МОИ ИГРЫ", "MY GAMES");
+                color: Theme.text-3;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 1px;
+            }
+        }
+
+        Flickable {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: start;
+                spacing: 2px;
+                for g in Store.games: GameItem {
+                    g: g;
+                    active: Store.page == "game" && Store.game.id == g.id;
+                    clicked => {
+                        Store.open-game(g.id);
+                    }
+                }
+                if Store.games.length == 0: Text {
+                    text: Lang.t("Пока пусто — найдите или добавьте игру в библиотеке.", "Nothing yet — find or add a game in the library.");
+                    color: Theme.text-3;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        // состояние моста
+        Rectangle {
+            height: 44px;
+            border-radius: 12px;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: Theme.border;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 8px;
+                        height: 8px;
+                        border-radius: 4px;
+                        background: Store.hub-state == "ok" ? Theme.success : Store.hub-state == "error" ? Theme.danger : Theme.warning;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: Store.hub-text;
+                        color: Theme.text-2;
+                        font-size: 11.5px;
+                        overflow: elide;
+                    }
+                }
+                Text {
+                    text: "v" + Store.version;
+                    color: Theme.text-3;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

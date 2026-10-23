@@ -1,0 +1,39 @@
+[package]
+name = "modly-app"
+description = "Modly — beautiful, fast mod manager and live control panel for mods"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "modly"
+path = "src/main.rs"
+
+[dependencies]
+modly-core.workspace = true
+modly-protocol.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+log.workspace = true
+anyhow = "1"
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "renderer-software", "accessibility", "raw-window-handle-06"] }
+raw-window-handle = "0.6"
+rfd = { version = "0.17", default-features = false }
+# Логотипы и обложки каталога: resvg (он внутри Slint) и те же декодеры, которыми он читает
+# картинки в SVG (PNG — tiny-skia, JPEG — zune-jpeg, WebP — image-webp), так что exe почти не растёт.
+resvg = { version = "0.48", default-features = false }
+zune-jpeg = "0.5"
+image-webp = "0.2"
+# QR-код адреса пульта с телефона
+qrcodegen = "1.8"
+
+[build-dependencies]
+slint-build = "1.18"
+embed-resource = "3"
+
+[dev-dependencies]
+tempfile = "3"
+# тестовые картинки (PNG, JPEG) для проверки декодирования
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

@@ -1,0 +1,24 @@
+{
+  "id": "example-mod",
+  "name": "Example Mod",
+  "version": "1.0.0",
+  "author": "you",
+  "description": {
+    "en": "A template Unity mod: game speed slider and live stats in Modly.",
+    "ru": "Шаблон Unity-мода: скорость игры и показатели в Modly."
+  },
+  "game": {
+    "id": "your-game",
+    "name": "Your Game",
+    "exe": "YourGame.exe",
+    "detect": ["{managed}/Assembly-CSharp.dll"]
+  },
+  "install": {
+    "method": "unity-mono",
+    "assembly": "bin/ExampleMod.dll",
+    "entry": "ExampleMod.ModEntry.Init"
+  },
+  "dev": {
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -GamePath \"C:\\Games\\YourGame\""
+  }
+}

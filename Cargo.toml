@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/modly-protocol",
+    "crates/modly-core",
+    "crates/modly-app",
+    "sdk/rust",
+]
+
+[workspace.package]
+version = "0.1.0-beta"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Modly contributors"]
+
+[workspace.dependencies]
+modly-protocol = { path = "crates/modly-protocol" }
+modly-core = { path = "crates/modly-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "time", "macros"] }
+log = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+# Зависимости в debug собираем с оптимизацией: Slint и рендерер заметно быстрее, а свой код компилируется как обычно.
+[profile.dev.package."*"]
+opt-level = 2

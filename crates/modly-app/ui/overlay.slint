@@ -1,0 +1,164 @@
+// Оверлей в игре: панель мода поверх игры по горячей клавише (как оверлей WeMod).
+// Отдельное окно без рамки, поверх всех; фокус у игры не забирает (см. modly_core::win::make_overlay).
+// Данные — те же, что у панели на странице игры: модели общие, свойства копирует app/overlay.rs.
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme, Lang } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Store } from "store.slint";
+import { Icon, IconBtn, Segmented } from "widgets.slint";
+import { LivePanel } from "live.slint";
+import { MapViewer, MapSide, MapsCard } from "map.slint";
+
+export component OverlayWindow inherits Window {
+    title: "Modly Overlay";
+    no-frame: true;
+    always-on-top: true;
+    icon: @image-url("icons/logo.svg");
+    background: Theme.bg;
+    default-font-family: "Segoe UI";
+    default-font-size: 13px;
+    preferred-width: 440px;
+    preferred-height: 760px;
+    // сочетание клавиш, которым оверлей прячется
+    in property <string> hotkey;
+    callback hide-overlay();
+    // вкладка: панель мода или карта игры (если у игры есть карты на сайте)
+    in-out property <string> tab: "mod";
+    // на вкладке «Карта»: открыта карта (true) или список карт игры
+    in-out property <bool> map-view;
+    property <bool> has-maps: Store.game-maps.length > 0 || root.map-view;
+
+    // тонкая рамка цвета акцента — видно, где кончается оверлей и начинается игра
+    Rectangle {
+        border-width: 1px;
+        border-color: Theme.accent.transparentize(0.55);
+    }
+
+    VerticalLayout {
+        padding: 1px;
+        Rectangle {
+            height: 46px;
+            background: Theme.sidebar;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 8px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        source: @image-url("icons/logo.svg");
+                        width: 22px;
+                        height: 22px;
+                    }
+                }
+                Text {
+                    text: "Modly";
+                    color: Theme.text;
+                    font-size: 15px;
+                    font-weight: 800;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                if root.hotkey != "": Text {
+                    text: root.hotkey + Lang.t(" — скрыть", " — hide");
+                    color: Theme.text-3;
+                    font-size: 11.5px;
+                    vertical-alignment: center;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconBtn {
+                        icon: Icons.x;
+                        label: Lang.t("Скрыть оверлей", "Hide the overlay");
+                        size: 30px;
+                        clicked => {
+                            root.hide-overlay();
+                        }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+        if root.has-maps: HorizontalLayout {
+            padding: 10px;
+            padding-bottom: 0px;
+            Segmented {
+                options: [
+                    { value: "mod", label: Lang.t("Мод", "Mod"), selected: root.tab == "mod" },
+                    { value: "map", label: Lang.t("Карта", "Map"), selected: root.tab == "map" },
+                ];
+                picked(v) => {
+                    root.tab = v;
+                }
+            }
+        }
+        if !root.has-maps || root.tab == "mod": ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding: 14px;
+                LivePanel { }
+            }
+        }
+        // карта: список карт игры или открытая карта (прямо во время игры)
+        if root.has-maps && root.tab == "map" && !root.map-view: ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding: 14px;
+                MapsCard { }
+            }
+        }
+        if root.has-maps && root.tab == "map" && root.map-view: VerticalLayout {
+            vertical-stretch: 1;
+            padding: 10px;
+            spacing: 10px;
+            HorizontalLayout {
+                spacing: 8px;
+                VerticalLayout {
+                    alignment: center;
+                    IconBtn {
+                        icon: Icons.chevron-left;
+                        label: Lang.t("Все карты игры", "All maps of the game");
+                        size: 30px;
+                        clicked => {
+                            root.map-view = false;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: Store.map-title;
+                        color: Theme.text;
+                        font-size: 14px;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: Store.map-subtitle;
+                        color: Theme.text-3;
+                        font-size: 11.5px;
+                        overflow: elide;
+                    }
+                }
+            }
+            overlay-view := MapViewer {
+                compact: true;
+                vertical-stretch: 3;
+            }
+            MapSide {
+                vertical-stretch: 2;
+                pick(i) => {
+                    Store.map-select(i, true);
+                    overlay-view.focus-on(i);
+                }
+            }
+        }
+    }
+}

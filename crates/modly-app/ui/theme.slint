@@ -1,0 +1,51 @@
+// Цвета, размеры и язык интерфейса Modly.
+
+export global Theme {
+    // фон и поверхности
+    out property <color> bg: #0a0c11;
+    out property <color> sidebar: #0d1017;
+    out property <color> surface: #131722;
+    out property <color> surface-2: #181d2a;
+    out property <color> surface-3: #212738;
+    out property <color> input: #0f121a;
+    out property <color> border: #1f2534;
+    out property <color> border-strong: #2b3347;
+
+    // текст
+    out property <color> text: #eef0f7;
+    out property <color> text-2: #b2b9cc;
+    out property <color> text-3: #747d93;
+
+    // акценты
+    out property <color> accent: #8b5cf6;
+    out property <color> accent-2: #22d3ee;
+    out property <color> accent-soft: #8b5cf62e;
+    out property <color> success: #34d399;
+    out property <color> warning: #fbbf24;
+    out property <color> danger: #f87171;
+    out property <color> info: #60a5fa;
+
+    out property <brush> accent-gradient: @linear-gradient(90deg, #8b5cf6 0%, #6d6af7 45%, #22d3ee 100%);
+
+    out property <length> radius: 14px;
+    out property <length> radius-small: 10px;
+
+    public pure function tone(name: string) -> color {
+        return name == "success" ? root.success
+            : name == "warning" ? root.warning
+            : name == "danger" ? root.danger
+            : name == "info" ? root.info
+            : name == "accent" ? root.accent
+            : name == "muted" ? root.text-3
+            : root.text-2;
+    }
+}
+
+// Язык: каждая надпись записана парой Lang.t("по-русски", "in English").
+export global Lang {
+    in-out property <bool> english: false;
+
+    public pure function t(ru: string, en: string) -> string {
+        return root.english ? en : ru;
+    }
+}

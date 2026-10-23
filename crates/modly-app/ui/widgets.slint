@@ -1,0 +1,885 @@
+// Базовые виджеты Modly — свои, без стандартного стиля, чтобы всё было в одном духе.
+
+import { Theme, Lang } from "theme.slint";
+import { Icons } from "icons.slint";
+import { OptionItem, PresetItem } from "store.slint";
+
+// Иконка, отцентрированная в своём квадрате.
+export component Icon inherits Rectangle {
+    in property <image> source;
+    in property <color> tint: Theme.text-2;
+    in property <length> size: 18px;
+    width: root.size;
+    height: root.size;
+    Image {
+        source: root.source;
+        colorize: root.tint;
+        width: root.size;
+        height: root.size;
+        image-fit: contain;
+    }
+}
+
+// Кнопка. kind: primary | secondary | ghost | danger | success | outline
+export component Btn inherits Rectangle {
+    in property <string> text;
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> show-icon: false;
+    in property <string> kind: "secondary";
+    in property <bool> enabled: true;
+    in property <bool> compact: false;
+    in property <length> font-size: root.compact ? 12.5px : 13.5px;
+    callback clicked();
+    accessible-role: button;
+    accessible-label: root.text != "" ? root.text : root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    property <color> fg: root.kind == "primary" || root.kind == "danger" || root.kind == "success" ? #ffffff
+        : root.kind == "ghost" ? Theme.text-2 : Theme.text;
+
+    height: root.compact ? 32px : 40px;
+    min-width: root.height;
+    horizontal-stretch: 0;
+    border-radius: root.compact ? 9px : 11px;
+    opacity: root.enabled ? 1 : 0.42;
+    // Однотонные цвета: программный рендерер Slint (по умолчанию в Modly) не скругляет углы у градиентов.
+    background: root.kind == "primary" ? Theme.accent
+        : root.kind == "danger" ? #dc2626
+        : root.kind == "success" ? #059669
+        : root.kind == "ghost" ? transparent
+        : root.kind == "outline" ? transparent
+        : Theme.surface-3;
+    border-width: root.kind == "outline" || root.kind == "secondary" ? 1px : 0;
+    border-color: root.kind == "outline" ? Theme.border-strong : #ffffff10;
+    // тень только у активной основной кнопки: без размытия Slint всё равно рисует её сплошной
+    drop-shadow-blur: root.kind == "primary" && root.enabled ? 18px : 0;
+    drop-shadow-color: root.kind == "primary" && root.enabled ? #8b5cf650 : transparent;
+    drop-shadow-offset-y: 4px;
+
+    hover := Rectangle {
+        border-radius: root.border-radius;
+        background: #ffffff;
+        opacity: !root.enabled ? 0 : ta.pressed ? 0.14 : ta.has-hover ? 0.07 : 0;
+        animate opacity { duration: 120ms; }
+    }
+
+    HorizontalLayout {
+        padding-left: root.text == "" ? 0 : (root.compact ? 11px : 16px);
+        padding-right: root.text == "" ? 0 : (root.compact ? 12px : 18px);
+        spacing: 8px;
+        alignment: center;
+        if root.show-icon: VerticalLayout {
+            alignment: center;
+            Icon {
+                source: root.icon;
+                tint: root.fg;
+                size: root.compact ? 14px : 16px;
+            }
+        }
+        if root.text != "": Text {
+            text: root.text;
+            color: root.fg;
+            font-size: root.font-size;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Кнопка-иконка без подписи.
+export component IconBtn inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> enabled: true;
+    in property <length> size: 34px;
+    in property <color> tint: Theme.text-2;
+    in property <bool> active: false;
+    callback clicked();
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        root.clicked();
+    }
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 3.2;
+    background: root.active ? Theme.surface-3 : ta.pressed ? #ffffff1a : ta.has-hover ? #ffffff0e : transparent;
+    opacity: root.enabled ? 1 : 0.4;
+    animate background { duration: 120ms; }
+    Icon {
+        source: root.icon;
+        tint: ta.has-hover || root.active ? Theme.text : root.tint;
+        size: root.size * 0.5;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Кнопка с подтверждением: первое нажатие «взводит», второе — срабатывает (3 секунды на раздумье).
+export component ConfirmBtn inherits Rectangle {
+    in property <string> text;
+    in property <string> label;
+    in property <string> confirm-text;
+    in property <image> icon;
+    in property <bool> show-icon: false;
+    in property <string> kind: "secondary";
+    in property <bool> enabled: true;
+    in property <bool> compact: false;
+    callback clicked();
+    property <bool> armed: false;
+    horizontal-stretch: 0;
+
+    HorizontalLayout {
+        Btn {
+            label: root.label;
+            text: root.armed ? (root.confirm-text != "" ? root.confirm-text : Lang.t("Точно?", "Sure?")) : root.text;
+            icon: root.armed ? Icons.alert : root.icon;
+            show-icon: root.show-icon || root.armed;
+            kind: root.armed ? "danger" : root.kind;
+            enabled: root.enabled;
+            compact: root.compact;
+            clicked => {
+                if (root.confirm-text == "" && root.kind != "danger") {
+                    root.clicked();
+                } else if (root.armed) {
+                    root.armed = false;
+                    root.clicked();
+                } else {
+                    root.armed = true;
+                }
+            }
+        }
+    }
+
+    Timer {
+        interval: 3s;
+        running: root.armed;
+        triggered => {
+            root.armed = false;
+        }
+    }
+}
+
+// Переключатель.
+export component Toggle inherits Rectangle {
+    in property <bool> checked;
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        root.toggled(!root.checked);
+    }
+    width: 46px;
+    height: 26px;
+    border-radius: 13px;
+    background: Theme.surface-3;
+    border-width: 1px;
+    border-color: root.checked ? transparent : Theme.border-strong;
+    opacity: root.enabled ? 1 : 0.4;
+
+    Rectangle {
+        border-radius: root.border-radius;
+        background: Theme.accent;
+        opacity: root.checked ? 1 : 0;
+        animate opacity { duration: 160ms; }
+    }
+
+    knob := Rectangle {
+        width: ta.pressed ? 23px : 20px;
+        height: 20px;
+        y: 3px;
+        x: root.checked ? root.width - self.width - 3px : 3px;
+        border-radius: 10px;
+        background: root.checked ? #ffffff : Theme.text-2;
+        drop-shadow-blur: 6px;
+        drop-shadow-color: #00000060;
+        animate x, width { duration: 180ms; easing: ease-out; }
+        animate background { duration: 160ms; }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.toggled(!root.checked);
+        }
+    }
+}
+
+// Горячая клавиша элемента. Клик — ждём нажатия: сочетание назначается, Esc — отмена, Backspace — снять.
+export component HotkeyChip inherits Rectangle {
+    in property <string> key;
+    // название элемента — для экранного диктора
+    in property <string> label;
+    in property <bool> capturing;
+    // клавишу заняла другая программа
+    in property <bool> busy;
+    in property <bool> enabled: true;
+    callback start();
+    callback cancel();
+    callback clear();
+    // текст клавиши от Slint и модификаторы: Ctrl, Alt, Shift, Win
+    callback pressed(string, bool, bool, bool, bool);
+
+    // модификаторы, которые уже зажаты, пока ждём основную клавишу
+    property <string> held;
+
+    accessible-role: button;
+    accessible-label: Lang.t("Горячая клавиша", "Hotkey") + ": " + root.label;
+    accessible-value: root.capturing ? Lang.t("нажмите клавишу", "press a key") : root.key;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if (root.capturing) {
+            root.cancel();
+        } else {
+            root.start();
+        }
+    }
+
+    pure function mods-text(m: KeyboardModifiers) -> string {
+        return (m.control ? "Ctrl+" : "") + (m.alt ? "Alt+" : "") + (m.shift ? "Shift+" : "") + (m.meta ? "Win+" : "");
+    }
+
+    height: 28px;
+    min-width: 30px;
+    horizontal-stretch: 0;
+    border-radius: 8px;
+    background: root.capturing ? Theme.accent-soft : ta.has-hover ? Theme.surface-3 : Theme.input;
+    border-width: 1px;
+    border-color: root.capturing ? Theme.accent : root.busy ? Theme.danger.transparentize(0.5) : root.key != "" ? Theme.border-strong : Theme.border;
+    opacity: !root.enabled ? 0.4 : root.key == "" && !root.capturing && !ta.has-hover ? 0.6 : 1;
+    animate background, border-color { duration: 120ms; }
+
+    HorizontalLayout {
+        padding-left: root.key == "" && !root.capturing ? 0 : 8px;
+        padding-right: root.key == "" && !root.capturing ? 0 : 9px;
+        spacing: 6px;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: Icons.keyboard;
+                size: 14px;
+                tint: root.capturing ? Theme.accent-2 : root.busy ? Theme.danger : ta.has-hover ? Theme.text-2 : Theme.text-3;
+            }
+        }
+        if root.capturing || root.key != "": Text {
+            text: root.capturing ? (root.held != "" ? root.held + "…" : Lang.t("Нажмите клавишу", "Press a key")) : root.key;
+            color: root.capturing ? Theme.text : root.busy ? Theme.danger : Theme.text-2;
+            font-size: 12px;
+            font-weight: 650;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            if (root.capturing) {
+                root.cancel();
+            } else {
+                root.start();
+            }
+        }
+    }
+
+    // ловит нажатия, пока ждём клавишу; ушёл фокус (клик мимо, Alt+Tab в игру) — отмена
+    if root.capturing: FocusScope {
+        width: 0;
+        height: 0;
+        init => {
+            self.focus();
+        }
+        key-pressed(e) => {
+            if (e.text == Key.Control || e.text == Key.ControlR || e.text == Key.Shift || e.text == Key.ShiftR
+                || e.text == Key.Alt || e.text == Key.AltGr || e.text == Key.Meta || e.text == Key.MetaR || e.text == Key.CapsLock) {
+                root.held = root.mods-text(e.modifiers);
+                return accept;
+            }
+            root.held = "";
+            if (e.text == Key.Escape && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift) {
+                root.cancel();
+            } else if (e.text == Key.Backspace && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift) {
+                root.clear();
+            } else {
+                root.pressed(e.text, e.modifiers.control, e.modifiers.alt, e.modifiers.shift, e.modifiers.meta);
+            }
+            accept
+        }
+        key-released(e) => {
+            root.held = "";
+            accept
+        }
+        focus-lost(reason) => {
+            root.held = "";
+            root.cancel();
+        }
+    }
+}
+
+// Ползунок. Во время перетаскивания шлёт dragged, по отпусканию — committed.
+export component SliderBar inherits Rectangle {
+    in property <float> value;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+    in property <float> step: 0;
+    in property <bool> enabled: true;
+    out property <float> shown: ta.pressed ? root.drag-value : root.value;
+    callback dragged(float);
+    callback committed(float);
+
+    property <float> drag-value: root.value;
+    property <length> pad: 10px;
+    property <float> span: root.maximum > root.minimum ? root.maximum - root.minimum : 1;
+    property <float> ratio: max(0, min(1, (root.shown - root.minimum) / root.span));
+
+    height: 26px;
+    min-width: 120px;
+    opacity: root.enabled ? 1 : 0.4;
+
+    pure function snap(raw: float) -> float {
+        return root.step > 0 ? max(root.minimum, min(root.maximum, root.minimum + round((raw - root.minimum) / root.step) * root.step)) : max(root.minimum, min(root.maximum, raw));
+    }
+
+    function value-at(x: length) -> float {
+        return root.snap(root.minimum + (x - root.pad) / (root.width - 2 * root.pad) * root.span);
+    }
+
+    track := Rectangle {
+        x: root.pad;
+        y: (root.height - self.height) / 2;
+        width: root.width - 2 * root.pad;
+        height: 6px;
+        border-radius: 3px;
+        background: Theme.surface-3;
+
+        Rectangle {
+            x: 0;
+            width: parent.width * root.ratio;
+            border-radius: 3px;
+            background: @linear-gradient(90deg, #8b5cf6 0%, #22d3ee 100%);
+        }
+    }
+
+    knob := Rectangle {
+        width: ta.pressed || ta.has-hover ? 20px : 18px;
+        height: self.width;
+        x: root.pad + (root.width - 2 * root.pad) * root.ratio - self.width / 2;
+        y: (root.height - self.height) / 2;
+        border-radius: self.width / 2;
+        background: #ffffff;
+        border-width: 3px;
+        border-color: #8b5cf6;
+        drop-shadow-blur: 8px;
+        drop-shadow-color: #8b5cf680;
+        animate width { duration: 100ms; }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                root.drag-value = root.value-at(self.mouse-x);
+                root.dragged(root.drag-value);
+            }
+            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.left) {
+                root.committed(root.drag-value);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                let v = root.value-at(self.mouse-x);
+                if (v != root.drag-value) {
+                    root.drag-value = v;
+                    root.dragged(v);
+                }
+            }
+        }
+    }
+}
+
+// Поле для текста с подсказкой.
+export component TextField inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> enabled: true;
+    in property <image> icon;
+    in property <bool> show-icon: false;
+    out property <bool> has-focus: input.has-focus;
+    callback accepted(string);
+    callback edited(string);
+
+    height: 38px;
+    border-radius: Theme.radius-small;
+    background: Theme.input;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.border;
+    opacity: root.enabled ? 1 : 0.45;
+    animate border-color { duration: 120ms; }
+
+    public function focus-input() {
+        input.focus();
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+        if root.show-icon: VerticalLayout {
+            alignment: center;
+            Icon {
+                source: root.icon;
+                size: 16px;
+                tint: Theme.text-3;
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            Text {
+                x: 0;
+                width: parent.width;
+                text: root.placeholder;
+                visible: input.text == "";
+                color: Theme.text-3;
+                font-size: 13px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            input := TextInput {
+                width: parent.width;
+                text <=> root.text;
+                enabled: root.enabled;
+                color: Theme.text;
+                font-size: 13px;
+                vertical-alignment: center;
+                single-line: true;
+                selection-background-color: #8b5cf680;
+                accepted => {
+                    root.accepted(self.text);
+                }
+                edited => {
+                    root.edited(self.text);
+                }
+            }
+        }
+    }
+}
+
+// Число с кнопками −/+. Значение уходит по Enter, по кнопкам и при уходе фокуса.
+export component NumberField inherits Rectangle {
+    in property <float> value;
+    in property <string> text;
+    in property <float> minimum: -1000000000;
+    in property <float> maximum: 1000000000;
+    in property <float> step: 1;
+    in property <string> unit;
+    in property <bool> enabled: true;
+    callback committed(float);
+
+    width: 150px;
+    height: 38px;
+    border-radius: Theme.radius-small;
+    background: Theme.input;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.border;
+    opacity: root.enabled ? 1 : 0.45;
+
+    pure function clamp-value(v: float) -> float {
+        return max(root.minimum, min(root.maximum, v));
+    }
+
+    function commit-text() {
+        if (input.text.is-float()) {
+            root.committed(root.clamp-value(input.text.to-float()));
+        }
+        input.text = root.text;
+    }
+
+    changed text => {
+        if (!input.has-focus) {
+            input.text = root.text;
+        }
+    }
+
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 2px;
+        IconBtn {
+            icon: Icons.minus;
+            size: 32px;
+            enabled: root.enabled && root.value > root.minimum;
+            clicked => {
+                root.committed(root.clamp-value(root.value - root.step));
+            }
+        }
+        input := TextInput {
+            horizontal-stretch: 1;
+            text: root.text;
+            enabled: root.enabled;
+            color: Theme.text;
+            font-size: 14px;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            single-line: true;
+            selection-background-color: #8b5cf680;
+            accepted => {
+                root.commit-text();
+            }
+            changed has-focus => {
+                if (!self.has-focus) {
+                    root.commit-text();
+                }
+            }
+        }
+        IconBtn {
+            icon: Icons.plus;
+            size: 32px;
+            enabled: root.enabled && root.value < root.maximum;
+            clicked => {
+                root.committed(root.clamp-value(root.value + root.step));
+            }
+        }
+    }
+}
+
+// Маленький чип (быстрые варианты числа).
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    in property <bool> enabled: true;
+    callback clicked();
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => {
+        root.clicked();
+    }
+    height: 30px;
+    min-width: 40px;
+    horizontal-stretch: 0;
+    border-radius: 8px;
+    background: root.selected ? Theme.accent-soft : ta.has-hover ? Theme.surface-3 : Theme.surface-2;
+    border-width: 1px;
+    border-color: root.selected ? #8b5cf6aa : Theme.border;
+    opacity: root.enabled ? 1 : 0.45;
+    animate background, border-color { duration: 120ms; }
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 11px;
+        Text {
+            text: root.text;
+            color: root.selected ? #ffffff : Theme.text-2;
+            font-size: 12.5px;
+            font-weight: 600;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Ряд чипов для быстрых значений.
+export component PresetRow inherits HorizontalLayout {
+    in property <[PresetItem]> presets;
+    in property <bool> enabled: true;
+    callback picked(float);
+    spacing: 6px;
+    alignment: start;
+    for p in root.presets: Chip {
+        text: p.label;
+        selected: p.selected;
+        enabled: root.enabled;
+        clicked => {
+            root.picked(p.value);
+        }
+    }
+}
+
+// Сегменты: выбор одного из немногих вариантов.
+export component Segmented inherits Rectangle {
+    in property <[OptionItem]> options;
+    in property <bool> enabled: true;
+    callback picked(string);
+    height: 38px;
+    border-radius: Theme.radius-small;
+    background: Theme.input;
+    border-width: 1px;
+    border-color: Theme.border;
+    opacity: root.enabled ? 1 : 0.45;
+
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 3px;
+        for o in root.options: Rectangle {
+            horizontal-stretch: 1;
+            accessible-role: tab;
+            accessible-label: o.label;
+            accessible-checkable: true;
+            accessible-checked: o.selected;
+            accessible-action-default => {
+                root.picked(o.value);
+            }
+            border-radius: 8px;
+            background: o.selected ? Theme.surface-3 : seg-ta.has-hover ? #ffffff08 : transparent;
+            border-width: o.selected ? 1px : 0;
+            border-color: #ffffff14;
+            animate background { duration: 120ms; }
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 7px;
+                alignment: center;
+                if o.has-icon: VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: o.icon;
+                        size: 15px;
+                        tint: o.selected ? Theme.accent-2 : Theme.text-3;
+                    }
+                }
+                Text {
+                    text: o.label;
+                    color: o.selected ? Theme.text : Theme.text-2;
+                    font-size: 13px;
+                    font-weight: o.selected ? 600 : 500;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+            seg-ta := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: pointer;
+                clicked => {
+                    root.picked(o.value);
+                }
+            }
+        }
+    }
+}
+
+// Сетка вариантов: много вариантов или несколько сразу.
+export component ChipGrid inherits Rectangle {
+    in property <[OptionItem]> options;
+    in property <bool> enabled: true;
+    in property <length> chip-width: 168px;
+    callback picked(string);
+
+    property <length> chip-height: 40px;
+    property <length> gap: 8px;
+    property <int> cols: max(1, floor((root.width + root.gap) / (root.chip-width + root.gap)));
+    property <length> cell-width: (root.width - (root.cols - 1) * root.gap) / root.cols;
+    property <int> rows: ceil(root.options.length / root.cols);
+
+    height: root.rows * (root.chip-height + root.gap) - (root.rows > 0 ? root.gap : 0);
+    opacity: root.enabled ? 1 : 0.45;
+
+    for o[i] in root.options: Rectangle {
+        accessible-role: checkbox;
+        accessible-label: o.label;
+        accessible-checkable: true;
+        accessible-checked: o.selected;
+        accessible-action-default => {
+            root.picked(o.value);
+        }
+        x: mod(i, root.cols) * (root.cell-width + root.gap);
+        y: floor(i / root.cols) * (root.chip-height + root.gap);
+        width: root.cell-width;
+        height: root.chip-height;
+        border-radius: 10px;
+        background: o.selected ? Theme.accent-soft : chip-ta.has-hover ? Theme.surface-3 : Theme.surface-2;
+        border-width: 1px;
+        border-color: o.selected ? #8b5cf6b0 : Theme.border;
+        animate background, border-color { duration: 120ms; }
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 10px;
+            spacing: 9px;
+            if o.has-icon: VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: o.icon;
+                    size: 17px;
+                    tint: o.selected ? Theme.accent-2 : Theme.text-3;
+                }
+            }
+            Text {
+                horizontal-stretch: 1;
+                text: o.label;
+                color: o.selected ? Theme.text : Theme.text-2;
+                font-size: 13px;
+                font-weight: o.selected ? 600 : 500;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            if o.selected: VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: Icons.check;
+                    size: 15px;
+                    tint: Theme.accent-2;
+                }
+            }
+        }
+        chip-ta := TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: pointer;
+            clicked => {
+                root.picked(o.value);
+            }
+        }
+    }
+}
+
+// Метка-«таблетка».
+export component Badge inherits Rectangle {
+    in property <string> text;
+    in property <string> tone: "default";
+    in property <bool> dot: false;
+    property <color> c: Theme.tone(root.tone);
+    height: 24px;
+    horizontal-stretch: 0;
+    border-radius: 12px;
+    background: root.c.transparentize(0.86);
+    border-width: 1px;
+    border-color: root.c.transparentize(0.7);
+    HorizontalLayout {
+        padding-left: root.dot ? 9px : 10px;
+        padding-right: 10px;
+        spacing: 6px;
+        if root.dot: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 7px;
+                height: 7px;
+                border-radius: 3.5px;
+                background: root.c;
+            }
+        }
+        Text {
+            text: root.text;
+            color: root.c.brighter(0.15);
+            font-size: 11.5px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Карточка-поверхность.
+export component Card inherits Rectangle {
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: Theme.border;
+}
+
+// Заголовок раздела страницы.
+export component SectionTitle inherits HorizontalLayout {
+    in property <string> text;
+    in property <string> hint;
+    spacing: 10px;
+    alignment: start;
+    Text {
+        text: root.text;
+        color: Theme.text;
+        font-size: 15px;
+        font-weight: 700;
+        vertical-alignment: center;
+    }
+    if root.hint != "": Text {
+        text: root.hint;
+        color: Theme.text-3;
+        font-size: 12.5px;
+        vertical-alignment: center;
+    }
+}
+
+// Пустое состояние: большая иконка, заголовок, пояснение.
+export component EmptyState inherits VerticalLayout {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> text;
+    alignment: center;
+    spacing: 10px;
+    padding: 28px;
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            width: 64px;
+            height: 64px;
+            border-radius: 20px;
+            background: Theme.accent-soft;
+            border-width: 1px;
+            border-color: #8b5cf640;
+            Icon {
+                source: root.icon;
+                size: 28px;
+                tint: #b9a2ff;
+            }
+        }
+    }
+    Text {
+        text: root.title;
+        color: Theme.text;
+        font-size: 16px;
+        font-weight: 700;
+        horizontal-alignment: center;
+    }
+    Text {
+        text: root.text;
+        color: Theme.text-3;
+        font-size: 13px;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+}
+
+// Квадратная плашка с иконкой.
+export component IconTile inherits Rectangle {
+    in property <image> icon;
+    in property <color> tint: Theme.accent;
+    in property <length> size: 36px;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size * 0.3;
+    background: root.tint.transparentize(0.84);
+    border-width: 1px;
+    border-color: root.tint.transparentize(0.72);
+    Icon {
+        source: root.icon;
+        size: root.size * 0.5;
+        tint: root.tint.brighter(0.25);
+    }
+}

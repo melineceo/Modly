@@ -1,0 +1,2136 @@
+import { ScrollView, AboutSlint } from "std-widgets.slint";
+import { Theme, Lang } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Store, GameCard, ModCard, OptionItem, SiteCard } from "store.slint";
+import { Icon, IconTile, Btn, IconBtn, ConfirmBtn, Toggle, TextField, Segmented, Card, Badge, SectionTitle, EmptyState } from "widgets.slint";
+import { LivePanel } from "live.slint";
+import { MapsCard } from "map.slint";
+
+// Заголовок страницы.
+component PageHeader inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> subtitle;
+    spacing: 12px;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: center;
+        spacing: 4px;
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 28px;
+            font-weight: 800;
+        }
+        if root.subtitle != "": Text {
+            text: root.subtitle;
+            color: Theme.text-3;
+            font-size: 13.5px;
+            wrap: word-wrap;
+        }
+    }
+    @children
+}
+
+// ---------------------------------------------------------------------------------------------
+// Библиотека
+
+component CornerMask inherits Rectangle {
+    in property <length> radius;
+    in property <bool> right;
+    in property <color> fill;
+    property <length> band: root.radius * 0.6;
+    width: root.radius;
+    height: root.radius;
+    clip: true;
+    Rectangle {
+        width: (root.radius + root.band) * 2 + 2px;
+        height: self.width;
+        x: root.right ? root.radius + root.band - self.width : -root.band;
+        y: -root.band;
+        border-radius: root.radius + root.band;
+        border-width: root.band;
+        border-color: root.fill;
+    }
+}
+
+component GameTile inherits Rectangle {
+    in property <GameCard> g;
+    callback clicked();
+    accessible-role: button;
+    accessible-label: root.g.name + " " + root.g.folder;
+    accessible-action-default => {
+        root.clicked();
+    }
+    border-radius: 18px;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: ta.has-hover ? root.g.accent.transparentize(0.4) : Theme.border;
+    drop-shadow-blur: ta.has-hover ? 28px : 0;
+    drop-shadow-color: ta.has-hover ? root.g.accent.transparentize(0.75) : transparent;
+    animate border-color, drop-shadow-blur { duration: 160ms; }
+
+    // Обложка. Скруглённые углы даёт однотонная основа (программный рендерер Slint не скругляет
+    // градиенты), а затухание-градиент начинается ниже зоны скругления.
+    Rectangle {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: 165px;
+        border-radius: 17px;
+        background: root.g.accent.transparentize(0.6);
+    }
+    Rectangle {
+        x: 1px;
+        y: 148px;
+        width: parent.width - 2px;
+        height: 18px;
+        background: Theme.surface;
+    }
+    Rectangle {
+        x: 1px;
+        y: 36px;
+        width: parent.width - 2px;
+        height: 112px;
+        background: @linear-gradient(180deg, Theme.surface.transparentize(1) 0%, Theme.surface 100%);
+    }
+
+    // Обложка игры из Steam: поверх цветной основы, к низу плавно уходит в цвет плитки.
+    // Углы скругляют маски — программный рендерер Slint картинки не скругляет.
+    if root.g.has-cover: Rectangle {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: 148px;
+        clip: true;
+        Image {
+            width: parent.width;
+            height: parent.height;
+            source: root.g.cover;
+            image-fit: ImageFit.cover;
+            opacity: ta.has-hover ? 1 : 0.82;
+            animate opacity { duration: 200ms; }
+        }
+        Rectangle {
+            y: parent.height * 0.4;
+            height: parent.height * 0.6 + 1px;
+            background: @linear-gradient(180deg, Theme.surface.transparentize(1) 0%, Theme.surface 100%);
+        }
+    }
+    if root.g.has-cover: CornerMask {
+        x: 0;
+        y: 0;
+        radius: 18px;
+        fill: Theme.bg;
+    }
+    if root.g.has-cover: CornerMask {
+        x: parent.width - 18px;
+        y: 0;
+        radius: 18px;
+        right: true;
+        fill: Theme.bg;
+    }
+    // рамка — поверх обложки
+    if root.g.has-cover: Rectangle {
+        border-radius: 18px;
+        border-width: 1px;
+        border-color: ta.has-hover ? root.g.accent.transparentize(0.4) : Theme.border;
+        animate border-color { duration: 160ms; }
+    }
+
+    cover := Rectangle {
+        y: 0;
+        height: 148px;
+
+        if root.g.has-icon && !root.g.has-cover: Image {
+            source: root.g.icon;
+            width: 136px;
+            height: 136px;
+            x: parent.width - 150px;
+            y: 8px;
+            opacity: ta.has-hover ? 0.26 : 0.16;
+            animate opacity { duration: 200ms; }
+        }
+
+        Rectangle {
+            x: 18px;
+            y: ta.has-hover ? 46px : 50px;
+            width: 78px;
+            height: 78px;
+            border-radius: 22px;
+            background: #0a0c1199;
+            border-width: 1px;
+            border-color: #ffffff1a;
+            animate y { duration: 180ms; easing: ease-out; }
+            if root.g.has-icon: Image {
+                source: root.g.icon;
+                width: 58px;
+                height: 58px;
+                image-fit: contain;
+            }
+            if !root.g.has-icon: Icon {
+                source: Icons.gamepad;
+                size: 34px;
+                tint: root.g.accent.brighter(0.5);
+            }
+        }
+
+        HorizontalLayout {
+            x: 14px;
+            y: 14px;
+            width: parent.width - 28px;
+            height: 24px;
+            alignment: end;
+            spacing: 6px;
+            if root.g.live: Badge {
+                text: Lang.t("Мод подключён", "Mod live");
+                tone: "success";
+                dot: true;
+            }
+            if root.g.running && !root.g.live: Badge {
+                text: Lang.t("Запущена", "Running");
+                tone: "info";
+                dot: true;
+            }
+            if root.g.missing: Badge {
+                text: Lang.t("Папки нет", "Missing");
+                tone: "danger";
+            }
+        }
+    }
+
+    VerticalLayout {
+        y: 148px;
+        height: parent.height - 148px;
+        padding: 16px;
+        padding-top: 6px;
+        spacing: 4px;
+        Text {
+            text: root.g.name;
+            color: Theme.text;
+            font-size: 16px;
+            font-weight: 700;
+            overflow: elide;
+        }
+        Text {
+            text: root.g.folder;
+            color: Theme.text-3;
+            font-size: 12px;
+            overflow: elide;
+        }
+        Rectangle {
+            vertical-stretch: 1;
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            if root.g.engine != "": Badge {
+                text: root.g.engine;
+            }
+            if root.g.mods-total > 0: Badge {
+                text: root.g.mods-installed > 0 ? Lang.t("Модов: ", "Mods: ") + root.g.mods-installed + "/" + root.g.mods-total : Lang.t("Мод доступен", "Mod available");
+                tone: root.g.mods-installed > 0 ? "accent" : "default";
+            }
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component AddTile inherits Rectangle {
+    callback add();
+    callback scan();
+    border-radius: 18px;
+    background: ta.has-hover ? Theme.surface-2 : Theme.surface.transparentize(0.4);
+    border-width: 1px;
+    border-color: ta.has-hover ? Theme.border-strong : Theme.border;
+    animate background, border-color { duration: 150ms; }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.add();
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 12px;
+        padding: 18px;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 56px;
+                height: 56px;
+                border-radius: 18px;
+                background: Theme.accent-soft;
+                Icon {
+                    source: Icons.plus;
+                    size: 26px;
+                    tint: #c4b5fd;
+                }
+            }
+        }
+        Text {
+            text: Lang.t("Добавить игру", "Add a game");
+            color: Theme.text;
+            font-size: 15px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: Lang.t("Выберите папку игры или exe", "Pick the game folder or exe");
+            color: Theme.text-3;
+            font-size: 12px;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}
+
+export component HomePage inherits Rectangle {
+    property <length> tile-w: 236px;
+    property <length> tile-h: 268px;
+    property <length> gap: 18px;
+    property <int> count: Store.library.length + 1;
+
+    ScrollView {
+        VerticalLayout {
+            padding: 34px;
+            padding-top: 30px;
+            spacing: 26px;
+            alignment: start;
+
+            PageHeader {
+                title: Lang.t("Библиотека", "Library");
+                subtitle: Store.games.length == 0
+                    ? Lang.t("Добавьте игру — Modly найдёт для неё моды и поможет их поставить.", "Add a game — Modly will find mods for it and help install them.")
+                    : Lang.t("Игр: ", "Games: ") + Store.games.length + (Store.live-count > 0 ? Lang.t(" · модов на связи: ", " · mods live: ") + Store.live-count : "");
+                VerticalLayout {
+                    alignment: center;
+                    TextField {
+                        width: 240px;
+                        text <=> Store.search;
+                        placeholder: Lang.t("Поиск игр", "Search games");
+                        icon: Icons.search;
+                        show-icon: true;
+                        edited(t) => {
+                            Store.search-changed(t);
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Btn {
+                        text: Store.scanning ? Lang.t("Ищу…", "Searching…") : Lang.t("Найти игры", "Find games");
+                        icon: Icons.refresh;
+                        show-icon: true;
+                        enabled: !Store.scanning;
+                        clicked => {
+                            Store.scan-games();
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Btn {
+                        text: Lang.t("Добавить", "Add");
+                        icon: Icons.plus;
+                        show-icon: true;
+                        kind: "primary";
+                        clicked => {
+                            Store.add-game();
+                        }
+                    }
+                }
+            }
+
+            grid := Rectangle {
+                property <int> cols: max(1, floor((self.width + root.gap) / (root.tile-w + root.gap)));
+                property <length> cw: (self.width - (self.cols - 1) * root.gap) / self.cols;
+                property <int> rows: ceil(root.count / self.cols);
+                height: self.rows * (root.tile-h + root.gap) - root.gap;
+
+                for g[i] in Store.library: GameTile {
+                    g: g;
+                    x: mod(i, grid.cols) * (grid.cw + root.gap);
+                    y: floor(i / grid.cols) * (root.tile-h + root.gap);
+                    width: grid.cw;
+                    height: root.tile-h;
+                    clicked => {
+                        Store.open-game(g.id);
+                    }
+                }
+                AddTile {
+                    x: mod(Store.library.length, grid.cols) * (grid.cw + root.gap);
+                    y: floor(Store.library.length / grid.cols) * (root.tile-h + root.gap);
+                    width: grid.cw;
+                    height: root.tile-h;
+                    add => {
+                        Store.add-game();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Мод (карточка)
+
+export component ModTile inherits Card {
+    in property <ModCard> m;
+    in property <bool> show-game: false;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                IconTile {
+                    icon: Icons.puzzle;
+                    size: 40px;
+                    tint: root.m.live ? Theme.success : Theme.accent;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: root.m.name;
+                    color: Theme.text;
+                    font-size: 15px;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+                Text {
+                    text: (root.m.version != "" ? "v" + root.m.version : "") + (root.m.author != "" ? "  ·  " + root.m.author : "") + (root.show-game ? "  ·  " + root.m.game-name : "");
+                    color: Theme.text-3;
+                    font-size: 12px;
+                    overflow: elide;
+                }
+            }
+            VerticalLayout {
+                alignment: start;
+                Badge {
+                    text: root.m.live ? Lang.t("На связи", "Live") : root.m.state-text;
+                    dot: root.m.live || root.m.state == "installed";
+                    tone: root.m.live ? "success"
+                        : root.m.state == "installed" ? "success"
+                        : root.m.state == "outdated" ? "warning"
+                        : root.m.state == "broken" ? "danger"
+                        : root.m.state == "unbuilt" ? "danger"
+                        : "muted";
+                }
+            }
+        }
+        if root.m.description != "": Text {
+            text: root.m.description;
+            color: Theme.text-2;
+            font-size: 12.5px;
+            wrap: word-wrap;
+        }
+        // сборка игры: проверена ли автором мода (а автору — кнопка дописать её в modly.json)
+        if root.m.build-text != "" && !root.show-game && (root.m.build-state != "none" || Store.developer-mode): VerticalLayout {
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 6px;
+                Image {
+                    source: root.m.build-state == "ok" ? Icons.check : root.m.build-state == "unknown" ? Icons.alert : Icons.info;
+                    colorize: root.m.build-state == "ok" ? Theme.success : root.m.build-state == "unknown" ? Theme.warning : Theme.text-3;
+                    width: 14px;
+                    height: 14px;
+                    y: 1px;
+                }
+                Text {
+                    text: root.m.build-text;
+                    color: root.m.build-state == "unknown" ? Theme.warning : Theme.text-3;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                    accessible-role: text;
+                }
+            }
+            if root.m.can-add-build && Store.developer-mode: HorizontalLayout {
+                alignment: start;
+                Btn {
+                    text: Lang.t("Добавить сборку в modly.json", "Add this build to modly.json");
+                    icon: Icons.plus;
+                    show-icon: true;
+                    kind: "outline";
+                    compact: true;
+                    enabled: !root.m.busy;
+                    clicked => {
+                        Store.add-build(root.m.id);
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            if root.m.state == "none" && !root.show-game: Btn {
+                text: Lang.t("Установить", "Install");
+                icon: Icons.download;
+                show-icon: true;
+                kind: "primary";
+                compact: true;
+                enabled: !root.m.busy;
+                clicked => {
+                    Store.install-mod(root.m.id);
+                }
+            }
+            if (root.m.state == "outdated" || root.m.state == "broken") && !root.show-game: Btn {
+                text: root.m.state == "broken" ? Lang.t("Переустановить", "Reinstall") : Lang.t("Обновить", "Update");
+                icon: Icons.refresh;
+                show-icon: true;
+                kind: "primary";
+                compact: true;
+                enabled: !root.m.busy;
+                clicked => {
+                    Store.install-mod(root.m.id);
+                }
+            }
+            if (root.m.state == "installed" || root.m.state == "outdated" || root.m.state == "broken") && !root.show-game: ConfirmBtn {
+                text: Lang.t("Удалить", "Remove");
+                confirm-text: Lang.t("Удалить мод?", "Remove mod?");
+                icon: Icons.trash;
+                show-icon: true;
+                kind: "secondary";
+                compact: true;
+                enabled: !root.m.busy;
+                clicked => {
+                    Store.uninstall-mod(root.m.id);
+                }
+            }
+            if root.show-game && root.m.copies > 0: Btn {
+                text: root.m.installed-count == root.m.copies ? Lang.t("Обновить везде", "Update everywhere") : Lang.t("Установить во все копии", "Install to all copies");
+                icon: Icons.download;
+                show-icon: true;
+                kind: root.m.installed-count == root.m.copies ? "secondary" : "primary";
+                compact: true;
+                enabled: !root.m.busy && root.m.state != "unbuilt";
+                clicked => {
+                    Store.install-everywhere(root.m.id);
+                }
+            }
+            if root.m.can-build && Store.developer-mode: Btn {
+                text: root.m.busy ? Lang.t("Собираю…", "Building…") : Lang.t("Собрать", "Build");
+                icon: Icons.hammer;
+                show-icon: true;
+                kind: "outline";
+                compact: true;
+                enabled: !root.m.busy;
+                clicked => {
+                    Store.build-mod(root.m.id);
+                }
+            }
+            IconBtn {
+                icon: Icons.folder;
+                size: 32px;
+                clicked => {
+                    Store.open-mod-folder(root.m.id);
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Страница игры
+
+component ModsColumn inherits VerticalLayout {
+    alignment: start;
+    spacing: 12px;
+    SectionTitle {
+        text: Lang.t("Моды", "Mods");
+        hint: Store.game-mods.length > 0 ? "" + Store.game-mods.length : "";
+    }
+    for m in Store.game-mods: ModTile {
+        m: m;
+    }
+    if Store.game-mods.length == 0: Card {
+        EmptyState {
+            icon: Icons.puzzle;
+            title: Lang.t("Модов пока нет", "No mods yet");
+            text: Lang.t("Найдите мод в «Каталоге» или сделайте свой — кнопка ниже.", "Find a mod in the Catalog or make your own — the button below.");
+        }
+    }
+    // «Сделать мод» — как в WeMod, только мод свой: готовый проект с SDK для этой игры
+    Card {
+        VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+            HorizontalLayout {
+                spacing: 14px;
+                VerticalLayout {
+                    alignment: start;
+                    IconTile {
+                        icon: Icons.wand;
+                        size: 36px;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text {
+                        text: Lang.t("Сделать свой мод", "Make your own mod");
+                        color: Theme.text;
+                        font-size: 14px;
+                        font-weight: 600;
+                    }
+                    Text {
+                        text: Store.game.engine == "Unity · Mono"
+                            ? Lang.t("Готовый C#-проект: переключатели в Modly, сборка против DLL игры, установка без загрузчиков.", "A ready C# project: toggles in Modly, built against the game's DLLs, installed without loaders.")
+                            : Lang.t("Готовый C++-проект с SDK Modly и подсказкой, как загрузить мод в эту игру.", "A ready C++ project with the Modly SDK and a guide to loading it into this game.");
+                        color: Theme.text-3;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+            HorizontalLayout {
+                alignment: start;
+                padding-left: 50px;
+                Btn {
+                    text: Lang.t("Создать проект", "Create project");
+                    icon: Icons.plus;
+                    show-icon: true;
+                    compact: true;
+                    enabled: !Store.game.missing;
+                    clicked => {
+                        Store.create-mod(Store.game.id);
+                    }
+                }
+            }
+        }
+    }
+    // карты игры от её модов
+    if Store.game-maps.length > 0: MapsCard { }
+}
+
+export component GamePage inherits Rectangle {
+    property <bool> wide: self.width >= 1000px;
+    ScrollView {
+        VerticalLayout {
+            alignment: start;
+
+            hero := Rectangle {
+                height: 236px;
+                clip: true;
+
+                Rectangle {
+                    background: @linear-gradient(90deg, Store.game.accent.transparentize(0.4) 0%, Store.game.accent.transparentize(0.82) 45%, Theme.bg.transparentize(1) 100%);
+                }
+                // широкий баннер игры из Steam — приглушённый, текст поверх читается
+                if Store.game.has-hero: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: Store.game.hero;
+                    image-fit: ImageFit.cover;
+                    opacity: 0.6;
+                }
+                if Store.game.has-hero: Rectangle {
+                    background: @linear-gradient(90deg, Theme.bg.transparentize(0.08) 0%, Theme.bg.transparentize(0.45) 55%, Theme.bg.transparentize(0.85) 100%);
+                }
+                if Store.game.has-icon && !Store.game.has-hero: Image {
+                    source: Store.game.icon;
+                    width: 340px;
+                    height: 340px;
+                    x: parent.width - 300px;
+                    y: -40px;
+                    opacity: 0.14;
+                }
+                Rectangle {
+                    y: parent.height - 90px;
+                    height: 90px;
+                    background: @linear-gradient(180deg, Theme.bg.transparentize(1) 0%, Theme.bg 100%);
+                }
+
+                HorizontalLayout {
+                    padding: 30px;
+                    padding-top: 44px;
+                    padding-bottom: 34px;
+                    spacing: 24px;
+
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 116px;
+                            height: 116px;
+                            border-radius: 30px;
+                            background: #0a0c11b0;
+                            border-width: 1px;
+                            border-color: #ffffff1c;
+                            drop-shadow-blur: 30px;
+                            drop-shadow-color: Store.game.accent.transparentize(0.6);
+                            if Store.game.has-icon: Image {
+                                source: Store.game.icon;
+                                width: 84px;
+                                height: 84px;
+                                image-fit: contain;
+                            }
+                            if !Store.game.has-icon: Icon {
+                                source: Icons.gamepad;
+                                size: 48px;
+                                tint: Store.game.accent.brighter(0.5);
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        spacing: 8px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            if Store.game.live: Badge {
+                                text: Lang.t("Мод подключён", "Mod live");
+                                tone: "success";
+                                dot: true;
+                            }
+                            if Store.game.running: Badge {
+                                text: Lang.t("Игра запущена", "Game running");
+                                tone: "info";
+                                dot: true;
+                            }
+                            if Store.game.engine != "": Badge {
+                                text: Store.game.engine;
+                            }
+                            if Store.game.steam: Badge {
+                                text: "Steam";
+                            }
+                            if Store.game.missing: Badge {
+                                text: Lang.t("Папка не найдена", "Folder not found");
+                                tone: "danger";
+                            }
+                        }
+                        Text {
+                            text: Store.game.name;
+                            color: Theme.text;
+                            font-size: 32px;
+                            font-weight: 800;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: Store.game.folder;
+                            color: Theme.text-2;
+                            font-size: 13px;
+                            overflow: elide;
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Btn {
+                                text: Store.game.running ? Lang.t("Запущена", "Running") : Lang.t("Играть", "Play");
+                                icon: Icons.play;
+                                show-icon: !Store.game.running;
+                                kind: "primary";
+                                enabled: !Store.game.running && !Store.game.missing;
+                                font-size: 15px;
+                                width: 150px;
+                                height: 46px;
+                                clicked => {
+                                    Store.launch-game(Store.game.id);
+                                }
+                            }
+                            // связка с WeMod (Настройки): трейнер WeMod работает в самом WeMod
+                            if Store.wemod && Store.wemod-available: Btn {
+                                text: "WeMod";
+                                label: Lang.t("Открыть в WeMod", "Open in WeMod");
+                                icon: Icons.external;
+                                show-icon: true;
+                                kind: "outline";
+                                height: 46px;
+                                clicked => {
+                                    Store.open-wemod();
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                IconBtn {
+                                    icon: Icons.folder;
+                                    size: 42px;
+                                    clicked => {
+                                        Store.open-game-folder(Store.game.id);
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                ConfirmBtn {
+                                    text: "";
+                                    label: Lang.t("Убрать из библиотеки", "Remove from library");
+                                    confirm-text: Lang.t("Убрать из библиотеки?", "Remove from library?");
+                                    icon: Icons.trash;
+                                    show-icon: true;
+                                    kind: "ghost";
+                                    clicked => {
+                                        Store.remove-game(Store.game.id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // широкое окно — моды слева, панель справа; узкое — друг под другом
+            if root.wide: HorizontalLayout {
+                padding: 30px;
+                padding-top: 6px;
+                spacing: 24px;
+                ModsColumn {
+                    width: 310px;
+                }
+                LivePanel {
+                    horizontal-stretch: 1;
+                    alignment: start;
+                }
+            }
+            if !root.wide: VerticalLayout {
+                padding: 30px;
+                padding-top: 6px;
+                spacing: 24px;
+                ModsColumn { }
+                LivePanel {
+                    alignment: start;
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Все моды
+
+export component ModsPage inherits Rectangle {
+    ScrollView {
+        VerticalLayout {
+            padding: 34px;
+            padding-top: 30px;
+            spacing: 18px;
+            alignment: start;
+            PageHeader {
+                title: Lang.t("Моды", "Mods");
+                subtitle: Lang.t("Пакеты модов из папок модов. Каждый мод — папка с modly.json.", "Mod packages from your mods folders. Each mod is a folder with modly.json.");
+                VerticalLayout {
+                    alignment: center;
+                    Btn {
+                        text: Lang.t("Обновить", "Reload");
+                        icon: Icons.refresh;
+                        show-icon: true;
+                        clicked => {
+                            Store.reload-mods();
+                        }
+                    }
+                }
+            }
+            for e in Store.mod-errors: Rectangle {
+                border-radius: 12px;
+                background: Theme.danger.transparentize(0.9);
+                border-width: 1px;
+                border-color: Theme.danger.transparentize(0.7);
+                HorizontalLayout {
+                    padding: 12px;
+                    spacing: 10px;
+                    VerticalLayout {
+                        alignment: start;
+                        Icon {
+                            source: Icons.alert;
+                            size: 16px;
+                            tint: Theme.danger;
+                        }
+                    }
+                    Text {
+                        horizontal-stretch: 1;
+                        text: e;
+                        color: #fecaca;
+                        font-size: 12.5px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+            for m in Store.all-mods: ModTile {
+                m: m;
+                show-game: true;
+            }
+            if Store.all-mods.length == 0: Card {
+                EmptyState {
+                    icon: Icons.puzzle;
+                    title: Lang.t("Модов не найдено", "No mods found");
+                    text: Lang.t("Добавьте папку модов в настройках или положите мод в %APPDATA%\\Modly\\mods.", "Add a mods folder in Settings or drop a mod into %APPDATA%\\Modly\\mods.");
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Каталог сайта модов
+
+// Кнопка «нравится» со счётчиком.
+component LikeBtn inherits Rectangle {
+    in property <bool> liked;
+    in property <int> count;
+    callback clicked();
+    accessible-role: button;
+    accessible-label: Lang.t("Нравится", "Like") + " " + root.count;
+    accessible-action-default => {
+        root.clicked();
+    }
+    height: 32px;
+    width: row.preferred-width;
+    border-radius: 9px;
+    background: root.liked ? #ff6b9a1f : ta.has-hover ? #ffffff0e : transparent;
+    border-width: 1px;
+    border-color: root.liked ? #ff6b9a66 : Theme.border;
+    animate background { duration: 120ms; }
+    row := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 11px;
+        spacing: 6px;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: Icons.heart;
+                size: 14px;
+                tint: root.liked ? #ff6b9a : Theme.text-2;
+            }
+        }
+        Text {
+            text: root.count;
+            color: root.liked ? #ffb3c9 : Theme.text-2;
+            font-size: 12.5px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Логотип мода — круг, как на сайте: картинка с сайта (круглой её уже сделал Modly — программный
+// рендерер не обрезает картинки по скруглению) или первая буква на цвете мода.
+export component ModLogo inherits Rectangle {
+    in property <string> letter;
+    in property <color> accent;
+    in property <image> logo;
+    in property <bool> has-logo;
+    in property <length> size: 56px;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: root.has-logo ? #0b0d14 : root.accent;
+    drop-shadow-blur: 18px;
+    drop-shadow-color: root.accent.transparentize(0.6);
+    if root.has-logo: Image {
+        width: root.size;
+        height: root.size;
+        source: root.logo;
+        image-fit: fill;
+    }
+    if !root.has-logo: Text {
+        text: root.letter;
+        color: #ffffff;
+        font-size: root.size * 0.42;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Верхний угол карточки поверх обложки: программный рендерер не обрезает картинки по скруглению,
+// поэтому всё, что за дугой угла, закрашивается цветом фона страницы.
+component SiteTile inherits Rectangle {
+    in property <SiteCard> m;
+    // карточка на экране или рядом — пора грузить её логотип и обложку
+    in property <bool> near;
+    property <string> slug: root.m.slug;
+    property <length> cover-h: 100px;
+    property <length> r: 18px;
+    property <string> badge: root.m.state == "installed" ? Lang.t("Установлен", "Installed")
+        : root.m.state == "downloaded" ? Lang.t("Скачано", "Downloaded")
+        : root.m.state == "outdated" ? Lang.t("Обновление", "Update")
+        : root.m.state == "none" && root.m.featured ? "hackerstone" : "";
+    border-radius: root.r;
+    background: Theme.surface;
+    drop-shadow-blur: ta.has-hover ? 26px : 0;
+    drop-shadow-color: ta.has-hover ? root.m.accent.transparentize(0.8) : transparent;
+    animate drop-shadow-blur { duration: 160ms; }
+
+    init => {
+        if root.near {
+            Store.catalog-art(root.slug, true);
+        }
+    }
+    changed near => {
+        Store.catalog-art(root.slug, root.near);
+    }
+    // после поиска та же карточка может показывать уже другой мод
+    changed slug => {
+        if root.near {
+            Store.catalog-art(root.slug, true);
+        }
+    }
+
+    // только подсветка при наведении — кнопки лежат выше и получают нажатия сами
+    ta := TouchArea { }
+
+    // Верх: обложка мода, а без неё — свечение его цвета, как на сайте. Книзу — в цвет карточки.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: root.cover-h;
+        clip: true;
+        background: #0b0d14;
+        if root.m.has-cover: Image {
+            width: parent.width;
+            height: parent.height;
+            source: root.m.cover;
+            image-fit: cover;
+        }
+        if !root.m.has-cover: Rectangle {
+            width: parent.width * 1.6;
+            height: self.width;
+            x: parent.width * 0.2 - self.width / 2;
+            y: parent.height * 0.2 - self.height / 2;
+            background: @radial-gradient(circle, root.m.accent.transparentize(0.6) 0%, root.m.accent.transparentize(1) 70%);
+        }
+        if !root.m.has-cover: Rectangle {
+            width: parent.width * 1.3;
+            height: self.width;
+            x: parent.width * 0.9 - self.width / 2;
+            y: parent.height * 0.9 - self.height / 2;
+            background: @radial-gradient(circle, root.m.accent.brighter(0.4).transparentize(0.72) 0%, root.m.accent.transparentize(1) 70%);
+        }
+        Rectangle {
+            y: parent.height * 0.3;
+            height: parent.height * 0.7 + 1px;
+            background: @linear-gradient(180deg, Theme.surface.transparentize(1) 0%, Theme.surface 100%);
+        }
+    }
+    CornerMask {
+        x: 0;
+        y: 0;
+        radius: root.r;
+        fill: Theme.bg;
+    }
+    CornerMask {
+        x: parent.width - root.r;
+        y: 0;
+        radius: root.r;
+        right: true;
+        fill: Theme.bg;
+    }
+    // рамка — поверх обложки
+    Rectangle {
+        border-radius: root.r;
+        border-width: 1px;
+        border-color: ta.has-hover ? root.m.accent.transparentize(0.45) : Theme.border;
+        animate border-color { duration: 160ms; }
+    }
+
+    // установлен / есть обновление / от hackerstone — в углу обложки, на тёмной подложке
+    if root.badge != "": Rectangle {
+        x: parent.width - self.width - 12px;
+        y: 12px;
+        width: chip.preferred-width;
+        height: 24px;
+        border-radius: 12px;
+        background: #0b0d14d9;
+        chip := Badge {
+            text: root.badge;
+            tone: root.m.state == "installed" || root.m.state == "downloaded" ? "success" : root.m.state == "outdated" ? "warning" : "accent";
+            dot: root.m.state != "none";
+        }
+    }
+
+    VerticalLayout {
+        padding: 18px;
+        padding-top: root.cover-h - 28px;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 14px;
+            ModLogo {
+                letter: root.m.letter;
+                accent: root.m.accent;
+                logo: root.m.logo;
+                has-logo: root.m.has-logo;
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: end;
+                spacing: 3px;
+                Text {
+                    text: root.m.title;
+                    color: Theme.text;
+                    font-size: 16px;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: root.m.game;
+                        color: Theme.text-3;
+                        font-size: 12px;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    // игра этого мода есть в библиотеке
+                    if root.m.owned: Text {
+                        text: root.m.owned-steam ? Lang.t("есть у вас · Steam", "you have it · Steam") : Lang.t("есть у вас", "you have it");
+                        color: Theme.success;
+                        font-size: 12px;
+                        horizontal-stretch: 0;
+                    }
+                }
+            }
+        }
+        Text {
+            height: 36px;
+            text: root.m.tagline;
+            color: Theme.text-2;
+            font-size: 12.5px;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+        // пока мод ставится, вместо цифр — полоска прогресса
+        if root.m.state == "busy": VerticalLayout {
+            alignment: center;
+            height: 16px;
+            Rectangle {
+                height: 6px;
+                border-radius: 3px;
+                background: Theme.surface-3;
+                Rectangle {
+                    x: 0;
+                    width: max(6px, parent.width * root.m.progress);
+                    border-radius: 3px;
+                    background: root.m.accent;
+                    clip: true;
+                    animate width { duration: 150ms; }
+                    // бегущий блик — видно, что загрузка идёт, даже когда проценты стоят
+                    Rectangle {
+                        width: 46px;
+                        x: mod(animation-tick() / 1ms, 1100) / 1100 * (parent.width + 46px) - 46px;
+                        border-radius: 3px;
+                        background: #ffffff59;
+                    }
+                }
+            }
+        }
+        if root.m.state != "busy": HorizontalLayout {
+            height: 16px;
+            spacing: 16px;
+            alignment: start;
+            HorizontalLayout {
+                spacing: 5px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: Icons.download;
+                        size: 13px;
+                        tint: Theme.text-3;
+                    }
+                }
+                Text {
+                    text: root.m.downloads;
+                    color: Theme.text-3;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+            }
+            if root.m.version != "": Text {
+                text: "v" + root.m.version;
+                color: Theme.text-3;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+            if !root.m.modly: Text {
+                text: Lang.t("без пакета для Modly", "no Modly package");
+                color: Theme.text-3;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            if root.m.state == "busy": Btn {
+                text: (root.m.modly ? Lang.t("Устанавливаю… ", "Installing… ") : Lang.t("Скачиваю… ", "Downloading… ")) + round(root.m.progress * 100) + "%";
+                kind: "primary";
+                compact: true;
+                enabled: false;
+            }
+            if root.m.modly && root.m.state == "none": Btn {
+                text: Lang.t("Установить", "Install");
+                icon: Icons.download;
+                show-icon: true;
+                kind: "primary";
+                compact: true;
+                clicked => {
+                    Store.catalog-install(root.m.slug);
+                }
+            }
+            if root.m.modly && root.m.state == "outdated": Btn {
+                text: Lang.t("Обновить", "Update");
+                icon: Icons.refresh;
+                show-icon: true;
+                kind: "primary";
+                compact: true;
+                clicked => {
+                    Store.catalog-install(root.m.slug);
+                }
+            }
+            if root.m.state == "installed": Btn {
+                text: Lang.t("К игре", "Open");
+                icon: Icons.gamepad;
+                show-icon: true;
+                compact: true;
+                clicked => {
+                    Store.catalog-goto(root.m.slug);
+                }
+            }
+            // мод без пакета Modly: файл скачивается прямо сюда, в «Загрузки\Modly»
+            if !root.m.modly && root.m.downloadable && (root.m.state == "none" || root.m.state == "outdated"): Btn {
+                text: root.m.state == "outdated" ? Lang.t("Скачать новую", "Get the update") : Lang.t("Скачать", "Download");
+                icon: Icons.download;
+                show-icon: true;
+                kind: "primary";
+                compact: true;
+                clicked => {
+                    Store.catalog-download(root.m.slug);
+                }
+            }
+            if !root.m.modly && root.m.state == "downloaded": Btn {
+                text: Lang.t("Показать файл", "Show file");
+                icon: Icons.folder;
+                show-icon: true;
+                compact: true;
+                clicked => {
+                    Store.catalog-reveal(root.m.slug);
+                }
+            }
+            if !root.m.modly && !root.m.downloadable: Btn {
+                text: Lang.t("На сайте", "On the site");
+                icon: Icons.external;
+                show-icon: true;
+                kind: "outline";
+                compact: true;
+                clicked => {
+                    Store.catalog-open(root.m.slug);
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            LikeBtn {
+                liked: root.m.liked;
+                count: root.m.likes;
+                clicked => {
+                    Store.catalog-like(root.m.slug);
+                }
+            }
+            IconBtn {
+                icon: Icons.external;
+                label: Lang.t("Страница мода", "Mod page");
+                size: 32px;
+                clicked => {
+                    Store.catalog-open(root.m.slug);
+                }
+            }
+        }
+    }
+}
+
+// Кто вошёл (или кнопка входа) — в шапке каталога.
+component AccountChip inherits HorizontalLayout {
+    alignment: center;
+    if Store.signed-in: Rectangle {
+        height: 38px;
+        width: chip.preferred-width;
+        border-radius: 19px;
+        background: Theme.surface-2;
+        border-width: 1px;
+        border-color: Theme.border;
+        chip := HorizontalLayout {
+            padding-left: 5px;
+            padding-right: 14px;
+            spacing: 9px;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: Theme.accent;
+                    Icon {
+                        source: Icons.user;
+                        size: 15px;
+                        tint: #ffffff;
+                    }
+                }
+            }
+            Text {
+                text: Store.account-nick;
+                color: Theme.text;
+                font-size: 13px;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+    }
+    if !Store.signed-in && !Store.account-busy: Btn {
+        text: Lang.t("Войти", "Sign in");
+        icon: Icons.user;
+        show-icon: true;
+        kind: "outline";
+        clicked => {
+            Store.account-login();
+        }
+    }
+    if Store.account-busy: Btn {
+        text: Lang.t("Ждём браузер · отмена", "Waiting for browser · cancel");
+        icon: Icons.x;
+        show-icon: true;
+        clicked => {
+            Store.account-cancel();
+        }
+    }
+}
+
+export component CatalogPage inherits Rectangle {
+    property <length> tile-w: 300px;
+    property <length> tile-h: 266px;
+    property <length> gap: 18px;
+
+    sv := ScrollView {
+        VerticalLayout {
+            padding: 34px;
+            padding-top: 30px;
+            spacing: 22px;
+            alignment: start;
+
+            PageHeader {
+                title: Lang.t("Каталог", "Catalog");
+                subtitle: Lang.t("Моды с ", "Mods from ") + Store.site-host + Lang.t(". Каждый выпуск проверяет модератор, а Modly сверяет SHA-256 перед установкой.", ". Every release is checked by a moderator, and Modly verifies SHA-256 before installing.");
+                VerticalLayout {
+                    alignment: center;
+                    TextField {
+                        width: 220px;
+                        text <=> Store.catalog-search;
+                        placeholder: Lang.t("Поиск модов", "Search mods");
+                        icon: Icons.search;
+                        show-icon: true;
+                        edited(t) => {
+                            Store.catalog-search-changed(t);
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconBtn {
+                        icon: Icons.refresh;
+                        label: Lang.t("Обновить каталог", "Refresh catalog");
+                        size: 38px;
+                        enabled: Store.catalog-state != "loading";
+                        clicked => {
+                            Store.catalog-refresh();
+                        }
+                    }
+                }
+                AccountChip { }
+            }
+
+            if Store.catalog-state == "error": Rectangle {
+                border-radius: 12px;
+                background: Theme.danger.transparentize(0.9);
+                border-width: 1px;
+                border-color: Theme.danger.transparentize(0.7);
+                HorizontalLayout {
+                    padding: 12px;
+                    padding-left: 14px;
+                    spacing: 10px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon {
+                            source: Icons.alert;
+                            size: 16px;
+                            tint: Theme.danger;
+                        }
+                    }
+                    Text {
+                        horizontal-stretch: 1;
+                        text: Lang.t("Каталог не загрузился: ", "Couldn't load the catalog: ") + Store.catalog-error;
+                        color: #fecaca;
+                        font-size: 12.5px;
+                        wrap: word-wrap;
+                        vertical-alignment: center;
+                    }
+                    Btn {
+                        text: Lang.t("Ещё раз", "Retry");
+                        compact: true;
+                        clicked => {
+                            Store.catalog-refresh();
+                        }
+                    }
+                }
+            }
+
+            if Store.catalog-state == "loading" && Store.catalog.length == 0: Card {
+                EmptyState {
+                    icon: Icons.cloud;
+                    title: Lang.t("Загружаем каталог…", "Loading the catalog…");
+                    text: Store.site-host;
+                }
+            }
+
+            grid := Rectangle {
+                property <int> cols: max(1, floor((self.width + root.gap) / (root.tile-w + root.gap)));
+                property <length> cw: (self.width - (self.cols - 1) * root.gap) / self.cols;
+                property <int> rows: ceil(Store.catalog.length / self.cols);
+                height: max(0px, self.rows * (root.tile-h + root.gap) - root.gap);
+
+                for m[i] in Store.catalog: SiteTile {
+                    m: m;
+                    x: mod(i, grid.cols) * (grid.cw + root.gap);
+                    y: floor(i / grid.cols) * (root.tile-h + root.gap);
+                    width: grid.cw;
+                    height: root.tile-h;
+                    // на экране или в полэкрана от него
+                    near: grid.y + self.y + sv.content-y < sv.visible-height * 1.5
+                        && grid.y + self.y + root.tile-h + sv.content-y > -sv.visible-height * 0.5;
+                }
+            }
+
+            if Store.catalog-state == "ok" && Store.catalog.length == 0: Card {
+                EmptyState {
+                    icon: Icons.search;
+                    title: Store.catalog-search != "" ? Lang.t("Ничего не нашлось", "Nothing found") : Lang.t("Каталог пока пуст", "The catalog is empty for now");
+                    text: Lang.t("Попробуйте другой запрос или загляните позже.", "Try a different search or come back later.");
+                }
+            }
+
+            Card {
+                HorizontalLayout {
+                    padding: 16px;
+                    padding-left: 18px;
+                    spacing: 14px;
+                    VerticalLayout {
+                        alignment: center;
+                        IconTile {
+                            icon: Icons.rocket;
+                            size: 36px;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text {
+                            text: Lang.t("Сделали мод? Выложите его в каталог", "Made a mod? Publish it to the catalog");
+                            color: Theme.text;
+                            font-size: 14px;
+                            font-weight: 600;
+                        }
+                        Text {
+                            text: Lang.t("Страница как у Creatly, проверка модератором и кнопка «Установить через Modly». Положите modly.json в архив — и мод ставится отсюда в один клик.", "A page like Creatly's, moderator review and an Install with Modly button. Put modly.json into the archive and the mod installs from here in one click.");
+                            color: Theme.text-3;
+                            font-size: 12px;
+                            wrap: word-wrap;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Btn {
+                            text: Lang.t("Студия автора", "Creator studio");
+                            icon: Icons.external;
+                            show-icon: true;
+                            compact: true;
+                            clicked => {
+                                Store.catalog-open("");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Для мододелов
+
+component CodeCard inherits Card {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <image> icon;
+    in property <string> code;
+    in property <string> folder;
+    VerticalLayout {
+        padding: 18px;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 12px;
+            IconTile {
+                icon: root.icon;
+                size: 38px;
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: root.title;
+                    color: Theme.text;
+                    font-size: 15px;
+                    font-weight: 700;
+                }
+                Text {
+                    text: root.subtitle;
+                    color: Theme.text-3;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconBtn {
+                    icon: Icons.copy;
+                    clicked => {
+                        Store.copy-text(root.code);
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconBtn {
+                    icon: Icons.folder;
+                    clicked => {
+                        Store.open-link(root.folder);
+                    }
+                }
+            }
+        }
+        Rectangle {
+            border-radius: 10px;
+            background: Theme.input;
+            border-width: 1px;
+            border-color: Theme.border;
+            VerticalLayout {
+                padding: 14px;
+                Text {
+                    text: root.code;
+                    color: #c9d1e8;
+                    font-family: "Consolas";
+                    font-size: 12.5px;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
+
+export component DevPage inherits Rectangle {
+    ScrollView {
+        VerticalLayout {
+            padding: 34px;
+            padding-top: 30px;
+            spacing: 18px;
+            alignment: start;
+            PageHeader {
+                title: Lang.t("Для мододелов", "For modders");
+                subtitle: Lang.t("Опишите переключатели, ползунки и кнопки своего мода — Modly нарисует их сам и будет присылать изменения. Мод продолжает работать и без Modly.", "Describe your mod's toggles, sliders and buttons — Modly draws them and sends you changes. Your mod keeps working without Modly.");
+            }
+
+            Card {
+                HorizontalLayout {
+                    padding: 16px;
+                    spacing: 14px;
+                    IconTile {
+                        icon: Icons.plug;
+                        size: 38px;
+                        tint: Theme.accent-2;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text {
+                            text: Lang.t("Протокол: NDJSON по именованному каналу", "Protocol: NDJSON over a named pipe");
+                            color: Theme.text;
+                            font-size: 14px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: Store.pipe-name + Lang.t("  ·  одна строка JSON — одно сообщение. Описание — в документации на сайте", "  ·  one JSON line per message. Spec: the docs on the site");
+                            color: Theme.text-3;
+                            font-size: 12.5px;
+                            font-family: "Consolas";
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Btn {
+                            text: Lang.t("Документация", "Docs");
+                            icon: Icons.book;
+                            show-icon: true;
+                            compact: true;
+                            clicked => {
+                                Store.open-link("docs");
+                            }
+                        }
+                    }
+                }
+            }
+
+            SectionTitle {
+                text: Lang.t("Подключённые моды", "Connected mods");
+                hint: Store.sessions.length == 0 ? Lang.t("никого", "none") : "" + Store.sessions.length;
+            }
+            for s in Store.sessions: Card {
+                HorizontalLayout {
+                    padding: 14px;
+                    spacing: 12px;
+                    IconTile {
+                        icon: Icons.plug;
+                        size: 34px;
+                        tint: Theme.success;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: s.title + "  " + s.version;
+                            color: Theme.text;
+                            font-size: 14px;
+                            font-weight: 600;
+                        }
+                        Text {
+                            text: s.game + (s.sdk != "" ? "  ·  " + s.sdk : "") + "  ·  #" + s.id;
+                            color: Theme.text-3;
+                            font-size: 12px;
+                        }
+                    }
+                    if s.status != "": VerticalLayout {
+                        alignment: center;
+                        Badge {
+                            text: s.status;
+                            tone: s.status-tone;
+                        }
+                    }
+                }
+            }
+
+            if Store.developer-mode: VerticalLayout {
+                spacing: 12px;
+                HorizontalLayout {
+                    SectionTitle {
+                        text: Lang.t("Консоль протокола", "Protocol console");
+                        hint: Lang.t("последние сообщения", "latest messages");
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                    Btn {
+                        text: Lang.t("Очистить", "Clear");
+                        compact: true;
+                        kind: "ghost";
+                        clicked => {
+                            Store.clear-log();
+                        }
+                    }
+                }
+                Rectangle {
+                    border-radius: 12px;
+                    background: Theme.input;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    min-height: 120px;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 3px;
+                        alignment: start;
+                        for l in Store.log: HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                text: l.time;
+                                color: Theme.text-3;
+                                font-family: "Consolas";
+                                font-size: 11.5px;
+                            }
+                            Text {
+                                text: l.source;
+                                color: l.tone == "out" ? Theme.accent-2 : l.tone == "danger" ? Theme.danger : l.tone == "warning" ? Theme.warning : #b9a2ff;
+                                font-family: "Consolas";
+                                font-size: 11.5px;
+                                width: 110px;
+                                overflow: elide;
+                            }
+                            Text {
+                                horizontal-stretch: 1;
+                                text: l.text;
+                                color: Theme.text-2;
+                                font-family: "Consolas";
+                                font-size: 11.5px;
+                                wrap: word-wrap;
+                            }
+                        }
+                        if Store.log.length == 0: Text {
+                            text: Lang.t("Здесь появится трафик между Modly и модами.", "Traffic between Modly and mods will show up here.");
+                            color: Theme.text-3;
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+            if !Store.developer-mode: Text {
+                text: Lang.t("Включите режим разработчика в настройках — появится консоль протокола и сборка модов из исходников.", "Turn on developer mode in Settings to get the protocol console and building mods from source.");
+                color: Theme.text-3;
+                font-size: 12.5px;
+                wrap: word-wrap;
+            }
+            CodeCard {
+                title: "Unity (Mono / IL2CPP) — C#";
+                subtitle: Lang.t("Один файл Modly.cs без зависимостей. Работает и в урезанных сборках игр, и с BepInEx/MelonLoader.", "A single dependency-free Modly.cs. Works in stripped game builds and with BepInEx/MelonLoader.");
+                icon: Icons.box;
+                folder: "sdk/unity";
+                code: "var modly = new ModlyClient(\"my-mod\", \"My Mod\", \"1.0.0\");\nvar page = modly.Page(\"main\", Txt.Of(\"Главное\", \"Main\"), \"star\");\nvar s = page.Section(\"player\", \"Player\");\ns.Toggle(\"god\", \"God mode\", () => god, v => god = v).Icon(\"shield\");\ns.Slider(\"speed\", \"Speed\", 0.5f, 5f, () => speed, v => speed = v).Step(0.1f);\ns.Button(\"heal\", \"Heal\", Heal).Tone(Tone.Accent);\nmodly.Start();\n// в Update():  modly.Update();";
+            }
+            CodeCard {
+                title: "Unreal / native — C++";
+                subtitle: Lang.t("Заголовочный modly.hpp (C++17, только WinAPI): для UE4SS-модов, инжекторов и своих движков.", "Header-only modly.hpp (C++17, WinAPI only): for UE4SS mods, injected DLLs and custom engines.");
+                icon: Icons.layers;
+                folder: "sdk/cpp";
+                code: "modly::Client modly({\"my-mod\", \"My Mod\", \"1.0.0\"});\nauto& s = modly.page(\"main\", \"Main\").section(\"player\", \"Player\");\ns.toggle(\"god\", \"God mode\", &god);\ns.slider(\"speed\", \"Speed\", 0.5, 5.0, &speed).step(0.1);\ns.button(\"heal\", \"Heal\", [] { heal(); });\nmodly.start();\n// каждый кадр:  modly.update();";
+            }
+            CodeCard {
+                title: "Rust";
+                subtitle: Lang.t("Крейт modly-sdk: тот же интерфейс, привязки к данным через замыкания.", "The modly-sdk crate: same idea, bindings via closures.");
+                icon: Icons.gem;
+                folder: "sdk/rust";
+                code: "let mut panel = Panel::new(ModInfo::new(\"my-mod\", \"My Mod\", \"1.0.0\"), None);\npanel.page(\"main\", \"Main\", Some(\"star\")).section(\"player\", \"Player\")\n    .add(toggle(\"god\", \"God mode\"), value(get_god, set_god));\nloop { panel.pump(); }";
+            }
+
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Настройки
+
+component SettingRow inherits HorizontalLayout {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> text;
+    padding: 16px;
+    padding-left: 18px;
+    padding-right: 18px;
+    spacing: 14px;
+    VerticalLayout {
+        alignment: center;
+        IconTile {
+            icon: root.icon;
+            size: 36px;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 1;
+        spacing: 2px;
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        if root.text != "": Text {
+            text: root.text;
+            color: Theme.text-3;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+    }
+    @children
+}
+
+export component SettingsPage inherits Rectangle {
+    ScrollView {
+        VerticalLayout {
+            padding: 34px;
+            padding-top: 30px;
+            spacing: 18px;
+            alignment: start;
+            PageHeader {
+                title: Lang.t("Настройки", "Settings");
+            }
+
+            Card {
+                VerticalLayout {
+                    SettingRow {
+                        icon: Icons.globe;
+                        title: Lang.t("Язык", "Language");
+                        text: Lang.t("Моды получают язык Modly и показывают тексты на нём, если умеют.", "Mods receive Modly's language and use it if they can.");
+                        VerticalLayout {
+                            alignment: center;
+                            Segmented {
+                                width: 330px;
+                                options: [
+                                    { value: "", label: Lang.t("Как в Windows", "System"), selected: Store.lang-setting == "" },
+                                    { value: "ru", label: "Русский", selected: Store.lang-setting == "ru" },
+                                    { value: "en", label: "English", selected: Store.lang-setting == "en" },
+                                ];
+                                picked(v) => {
+                                    Store.set-language(v);
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    SettingRow {
+                        icon: Icons.code;
+                        title: Lang.t("Режим разработчика", "Developer mode");
+                        text: Lang.t("Консоль протокола и кнопка «Собрать» у модов с исходниками.", "Protocol console and a Build button for mods with sources.");
+                        VerticalLayout {
+                            alignment: center;
+                            Toggle {
+                                label: Lang.t("Режим разработчика", "Developer mode");
+                                checked: Store.developer-mode;
+                                toggled(v) => {
+                                    Store.set-developer-mode(v);
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    SettingRow {
+                        icon: Icons.layers;
+                        title: Lang.t("Оверлей в игре", "In-game overlay");
+                        text: Store.overlay-hotkey == "off"
+                            ? Lang.t("Выключен.", "Off.")
+                            : Lang.t("Панель мода поверх игры по ", "The mod panel over the game with ") + Store.overlay-hotkey + Lang.t(". Игра не теряет фокус и не встаёт на паузу. Работает в оконном и «полноэкранном оконном» режимах.", ". The game keeps focus and doesn't pause. Works in windowed and borderless modes.");
+                        VerticalLayout {
+                            alignment: center;
+                            Segmented {
+                                width: 330px;
+                                options: [
+                                    { value: "Ctrl+Shift+O", label: "Ctrl+Shift+O", selected: Store.overlay-hotkey == "Ctrl+Shift+O" },
+                                    { value: "Ctrl+F1", label: "Ctrl+F1", selected: Store.overlay-hotkey == "Ctrl+F1" },
+                                    { value: "Alt+F1", label: "Alt+F1", selected: Store.overlay-hotkey == "Alt+F1" },
+                                    { value: "off", label: Lang.t("Выкл.", "Off"), selected: Store.overlay-hotkey == "off" },
+                                ];
+                                picked(v) => {
+                                    Store.set-overlay-hotkey(v);
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    SettingRow {
+                        icon: Icons.link;
+                        title: Lang.t("Вместе с WeMod", "Use with WeMod");
+                        text: Store.wemod-available
+                            ? Lang.t("На странице игры появится кнопка «WeMod»: если для игры нет нужного мода, откройте её трейнер в WeMod. Трейнеры WeMod работают в самом WeMod — Modly их не скачивает.", "Game pages get a WeMod button: if there's no mod you need, open the game's trainer in WeMod. WeMod trainers run in WeMod itself — Modly doesn't download them.")
+                            : Lang.t("WeMod не найден на этом компьютере. Установите его с wemod.com, и здесь можно будет включить кнопку «WeMod» на страницах игр.", "WeMod isn't installed on this PC. Install it from wemod.com to get a WeMod button on game pages.");
+                        VerticalLayout {
+                            alignment: center;
+                            Toggle {
+                                label: Lang.t("Вместе с WeMod", "Use with WeMod");
+                                checked: Store.wemod;
+                                enabled: Store.wemod-available;
+                                toggled(v) => {
+                                    Store.set-wemod(v);
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    SettingRow {
+                        icon: Icons.phone;
+                        title: Lang.t("Пульт с телефона", "Phone remote");
+                        text: Lang.t("Переключатели мода на телефоне — без приложений, в браузере. Работает в домашней сети, войти можно только по ключу из QR-кода.", "Your mod's switches on your phone — in the browser, no app needed. Works on your home network; only the key in the QR code lets you in.");
+                        VerticalLayout {
+                            alignment: center;
+                            Toggle {
+                                label: Lang.t("Пульт с телефона", "Phone remote");
+                                checked: Store.remote;
+                                toggled(v) => {
+                                    Store.set-remote(v);
+                                }
+                            }
+                        }
+                    }
+                    if Store.remote && Store.remote-error != "": HorizontalLayout {
+                        padding: 18px;
+                        padding-top: 0px;
+                        padding-left: 68px;
+                        Text {
+                            text: Store.remote-error;
+                            color: Theme.danger;
+                            font-size: 12.5px;
+                            wrap: word-wrap;
+                        }
+                    }
+                    if Store.remote && Store.remote-url != "": HorizontalLayout {
+                        padding: 18px;
+                        padding-top: 2px;
+                        padding-left: 68px;
+                        spacing: 20px;
+                        Rectangle {
+                            width: 184px;
+                            height: 184px;
+                            border-radius: 16px;
+                            background: #ffffff;
+                            Image {
+                                width: 172px;
+                                height: 172px;
+                                source: Store.remote-qr;
+                                image-rendering: pixelated;
+                                accessible-role: image;
+                                accessible-label: Lang.t("QR-код пульта", "Remote QR code");
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 10px;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: Lang.t("Наведите камеру телефона на код", "Point your phone's camera at the code");
+                                color: Theme.text;
+                                font-size: 14px;
+                                font-weight: 600;
+                            }
+                            Text {
+                                text: Lang.t("Телефон и компьютер должны быть в одной сети Wi-Fi. Если Windows спросит про доступ к сети — разрешите для частных сетей. Пульт показывает мод, открытый в Modly.", "The phone and the PC must be on the same Wi-Fi. If Windows asks about network access, allow it for private networks. The remote shows the mod open in Modly.");
+                                color: Theme.text-3;
+                                font-size: 12px;
+                                wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                alignment: start;
+                                spacing: 8px;
+                                Btn {
+                                    text: Lang.t("Копировать ссылку", "Copy link");
+                                    icon: Icons.copy;
+                                    show-icon: true;
+                                    compact: true;
+                                    clicked => {
+                                        Store.copy-text(Store.remote-url);
+                                    }
+                                }
+                                Btn {
+                                    text: Lang.t("Сбросить доступ", "Reset access");
+                                    icon: Icons.refresh;
+                                    show-icon: true;
+                                    compact: true;
+                                    kind: "ghost";
+                                    clicked => {
+                                        Store.reset-remote();
+                                    }
+                                }
+                            }
+                            Text {
+                                text: Lang.t("Сброс отвязывает все телефоны: старый код перестанет работать.", "Resetting unlinks every phone: the old code stops working.");
+                                color: Theme.text-3;
+                                font-size: 11.5px;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    SettingRow {
+                        icon: Icons.gauge;
+                        title: Lang.t("Рисовать через видеокарту", "GPU rendering");
+                        text: Lang.t("Плавнее на больших экранах, но Modly займёт около 100 МБ памяти вместо 30. Включится после перезапуска.", "Smoother on large screens, but Modly uses about 100 MB of memory instead of 30. Applies after a restart.");
+                        VerticalLayout {
+                            alignment: center;
+                            Toggle {
+                                label: Lang.t("Рисовать через видеокарту", "GPU rendering");
+                                checked: Store.gpu-rendering;
+                                toggled(v) => {
+                                    Store.set-gpu-rendering(v);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Card {
+                SettingRow {
+                    icon: Icons.user;
+                    title: Store.signed-in ? Lang.t("Аккаунт Hackerstone: ", "Hackerstone account: ") + Store.account-nick : Lang.t("Аккаунт Hackerstone", "Hackerstone account");
+                    text: Store.signed-in
+                        ? Lang.t("Лайки в каталоге ставятся от вашего имени. Выйти можно здесь или на сайте в «Аккаунт и устройства».", "Likes in the catalog are yours. Sign out here or on the site under “Account & devices”.")
+                        : Lang.t("Необязательно. Вход — в браузере на hackerstone.xyz, пароль в Modly не попадает. Нужен, чтобы ставить лайки модам из каталога.", "Optional. You sign in in the browser on hackerstone.xyz — your password never reaches Modly. Needed to like mods in the catalog.");
+                    VerticalLayout {
+                        alignment: center;
+                        if Store.signed-in: Btn {
+                            text: Lang.t("Выйти", "Sign out");
+                            compact: true;
+                            clicked => {
+                                Store.account-logout();
+                            }
+                        }
+                        if !Store.signed-in && !Store.account-busy: Btn {
+                            text: Lang.t("Войти", "Sign in");
+                            icon: Icons.user;
+                            show-icon: true;
+                            kind: "primary";
+                            compact: true;
+                            clicked => {
+                                Store.account-login();
+                            }
+                        }
+                        if Store.account-busy: Btn {
+                            text: Lang.t("Отмена", "Cancel");
+                            compact: true;
+                            clicked => {
+                                Store.account-cancel();
+                            }
+                        }
+                    }
+                }
+            }
+
+            Card {
+                VerticalLayout {
+                    SettingRow {
+                        icon: Icons.folder;
+                        title: Lang.t("Папки модов", "Mods folders");
+                        text: Lang.t("Где Modly ищет пакеты модов (папки с modly.json).", "Where Modly looks for mod packages (folders with modly.json).");
+                        VerticalLayout {
+                            alignment: center;
+                            Btn {
+                                text: Lang.t("Добавить", "Add");
+                                icon: Icons.plus;
+                                show-icon: true;
+                                compact: true;
+                                clicked => {
+                                    Store.add-mod-dir();
+                                }
+                            }
+                        }
+                    }
+                    for d[i] in Store.mod-dirs: HorizontalLayout {
+                        padding-left: 68px;
+                        padding-right: 18px;
+                        padding-bottom: 10px;
+                        spacing: 10px;
+                        Text {
+                            horizontal-stretch: 1;
+                            text: d;
+                            color: Theme.text-2;
+                            font-size: 12.5px;
+                            font-family: "Consolas";
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        IconBtn {
+                            icon: Icons.folder;
+                            size: 30px;
+                            clicked => {
+                                Store.open-link(d);
+                            }
+                        }
+                        IconBtn {
+                            icon: Icons.x;
+                            size: 30px;
+                            clicked => {
+                                Store.remove-mod-dir(i);
+                            }
+                        }
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    SettingRow {
+                        icon: Icons.box;
+                        title: Lang.t("Данные Modly", "Modly data");
+                        text: Store.data-dir;
+                        VerticalLayout {
+                            alignment: center;
+                            Btn {
+                                text: Lang.t("Открыть", "Open");
+                                icon: Icons.external;
+                                show-icon: true;
+                                compact: true;
+                                clicked => {
+                                    Store.open-data-dir();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Card {
+                HorizontalLayout {
+                    padding: 20px;
+                    spacing: 16px;
+                    Image {
+                        source: @image-url("icons/logo.svg");
+                        width: 52px;
+                        height: 52px;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        spacing: 3px;
+                        Text {
+                            text: "Modly " + Store.version;
+                            color: Theme.text;
+                            font-size: 16px;
+                            font-weight: 800;
+                        }
+                        Text {
+                            text: Lang.t("Менеджер модов и панель управления ими. Написан на Rust и Slint — открытый исходный код.", "Mod manager and live control panel. Written in Rust and Slint — open source.");
+                            color: Theme.text-3;
+                            font-size: 12.5px;
+                            wrap: word-wrap;
+                        }
+                    }
+                    // требование лицензии Slint (Royalty-free 2.0, п. 2a)
+                    VerticalLayout {
+                        alignment: center;
+                        AboutSlint {
+                            width: 150px;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
