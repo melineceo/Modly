@@ -207,10 +207,23 @@ pub fn apply_update(src: &Path, dir: &Path, version: &str) -> Result<()> {
         bail!("в пакете обновления нет {}", update::APP_EXE);
     }
     swap_in(src, dir, &files, true)?;
-    let mut info = InstallInfo::load(dir).unwrap_or_default();
+    let from_setup = InstallInfo::load(dir);
+    let mut info = from_setup.clone().unwrap_or_default();
     info.version = version.to_owned();
     let _ = info.save(dir);
-    system::update_uninstall_version(dir, version, dir_size_kb(dir));
+    if from_setup.is_some() && system::installed().is_none() {
+        // Modly ставил установщик, а записи в «Приложениях» нет (её унесла песочница другого
+        // приложения или её удалили руками) — вернуть её, а с ней и ссылки modly://
+        match system::write_uninstall_entry(dir, version, dir_size_kb(dir)) {
+            Ok(()) => log::info!("restored the Apps & features entry"),
+            Err(e) => log::warn!("restore the Apps & features entry: {e:#}"),
+        }
+        if info.protocol {
+            let _ = system::register_protocol(&dir.join(update::APP_EXE));
+        }
+    } else {
+        system::update_uninstall_version(dir, version, dir_size_kb(dir));
+    }
     log::info!("updated {} to {version}", dir.display());
     Ok(())
 }
@@ -321,6 +334,34 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "new a");
         assert_eq!(std::fs::read_to_string(dir.join("keep.txt")).unwrap(), "mine");
         assert!(!dir.join(OLD_DIR).exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Записи в «Приложениях» нет, а Modly ставил установщик — обновление возвращает её.
+    #[test]
+    fn update_restores_missing_uninstall_entry() {
+        let root = std::env::temp_dir().join(format!("modly-restore-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // реестр — в ветке песочницы установщика, не в настоящей записи
+        unsafe { std::env::set_var("MODLY_SETUP_SANDBOX", root.join("sb")) };
+        let (src, dir) = (root.join("src"), root.join("dir"));
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(update::APP_EXE), "old").unwrap();
+        std::fs::write(src.join(update::APP_EXE), "new").unwrap();
+        system::remove_uninstall_entry();
+
+        // Modly не от установщика (нет install.json) — запись не появляется
+        apply_update(&src, &dir, "0.9.0-beta").unwrap();
+        assert!(system::installed().is_none());
+
+        InstallInfo { version: "0.9.0-beta".into(), shortcuts: Vec::new(), protocol: false }.save(&dir).unwrap();
+        apply_update(&src, &dir, "0.9.1-beta").unwrap();
+        let (at, version) = system::installed().expect("entry restored");
+        assert!(system::same_dir(&at, &dir));
+        assert_eq!(version, "0.9.1-beta");
+
+        system::remove_uninstall_entry();
         let _ = std::fs::remove_dir_all(&root);
     }
 }

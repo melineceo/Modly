@@ -3,6 +3,22 @@
 Формат: раздел `## <версия> — <дата>`, в нём `### Русский` и `### English`. Отсюда `cargo xtask dist`
 берёт текст выпуска на GitHub и в обновлении внутри Modly.
 
+## 0.2.4-beta — 2026-10-24
+
+### Русский
+- **Modly снова виден в «Приложения и возможности».** Установщик, запущенный изнутри другого приложения,
+  иногда не замечал, что Windows прячет его записи в реестре в песочницу этого приложения. Так бывало, если
+  программа, которая его запустила, уже закрылась. Теперь установщик и обновлятор проверяют это по факту:
+  пишут в реестр пробное значение и смотрят через службу Windows (WMI), видно ли оно снаружи.
+- Если записи в «Приложениях» нет, обновление Modly вернёт её само, а заодно и ссылки `modly://`.
+
+### English
+- **Modly shows up in Apps & features again.** An installer started from inside another app sometimes missed
+  that Windows was hiding its registry writes in that app's sandbox. This happened when the program that
+  started it had already closed. Now the installer and updater check this directly: they write a test value to
+  the registry and look it up through a Windows service (WMI) to see if it is visible outside.
+- If the Apps & features entry is missing, a Modly update puts it back, together with `modly://` links.
+
 ## 0.2.3-beta — 2026-10-23
 
 ### Русский

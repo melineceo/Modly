@@ -389,6 +389,147 @@ pub fn in_packaged_tree() -> bool {
     false
 }
 
+/// Записи в реестр этого процесса уходят в песочницу «упакованного» приложения? Проверка по факту, а не
+/// по родителям (родитель мог уже закрыться, а песочница остаётся): пробное значение пишется в HKCU,
+/// а читается через WMI — служба Windows работает вне любой песочницы и видит настоящий реестр.
+/// `None` — WMI не ответила, судить не по чему.
+pub fn registry_sandboxed() -> Option<bool> {
+    let sub = format!(r"Software\ModlySetupProbe-{}", std::process::id());
+    let token = format!("{:x}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
+    {
+        let key = create_key(&sub).ok()?;
+        set_sz(&key, "probe", &token).ok()?;
+    }
+    // COM — в своём потоке (не мешать окну установщика), и не дольше нескольких секунд
+    let (tx, rx) = std::sync::mpsc::channel();
+    let path = sub.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(wmi::read_hkcu_sz(&path, "probe"));
+    });
+    let seen = rx.recv_timeout(std::time::Duration::from_secs(8));
+    delete_tree(&sub);
+    match seen {
+        Ok(Ok(value)) => Some(value.as_deref() != Some(token.as_str())),
+        Ok(Err(e)) => {
+            log::warn!("registry probe via WMI: {e:#}");
+            None
+        }
+        Err(_) => {
+            log::warn!("registry probe via WMI: no answer");
+            None
+        }
+    }
+}
+
+mod wmi {
+    use anyhow::{Context, Result, anyhow};
+    use std::mem::ManuallyDrop;
+    use windows::Win32::System::Com::{
+        CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoSetProxyBlanket, CoUninitialize, EOAC_NONE,
+        RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE,
+    };
+    use windows::Win32::System::Variant::{VARIANT, VT_BSTR, VT_I4, VariantClear};
+    use windows::Win32::System::Wmi::{IWbemClassObject, IWbemLocator, IWbemServices, WBEM_FLAG_RETURN_WBEM_COMPLETE, WbemLocator};
+    use windows::core::{BSTR, HSTRING, PCWSTR};
+
+    const HKEY_CURRENT_USER: i32 = 0x8000_0001_u32 as i32;
+    const RPC_C_AUTHN_WINNT: u32 = 10;
+    const RPC_C_AUTHZ_NONE: u32 = 0;
+
+    fn int(v: i32) -> VARIANT {
+        let mut var = VARIANT::default();
+        unsafe {
+            (*var.Anonymous.Anonymous).vt = VT_I4;
+            (*var.Anonymous.Anonymous).Anonymous.lVal = v;
+        }
+        var
+    }
+
+    fn text(s: &str) -> VARIANT {
+        let mut var = VARIANT::default();
+        unsafe {
+            (*var.Anonymous.Anonymous).vt = VT_BSTR;
+            (*var.Anonymous.Anonymous).Anonymous.bstrVal = ManuallyDrop::new(BSTR::from(s));
+        }
+        var
+    }
+
+    fn put(obj: &IWbemClassObject, name: &str, mut value: VARIANT) -> Result<()> {
+        let r = unsafe { obj.Put(&HSTRING::from(name), 0, &value, 0) };
+        unsafe {
+            let _ = VariantClear(&mut value);
+        }
+        r.with_context(|| format!("WMI Put {name}"))
+    }
+
+    fn get(obj: &IWbemClassObject, name: &str) -> Result<(Option<i32>, Option<String>)> {
+        let mut value = VARIANT::default();
+        unsafe { obj.Get(&HSTRING::from(name), 0, &mut value, None, None) }.with_context(|| format!("WMI Get {name}"))?;
+        let out = unsafe {
+            let inner = &value.Anonymous.Anonymous;
+            if inner.vt == VT_I4 {
+                (Some(inner.Anonymous.lVal), None)
+            } else if inner.vt == VT_BSTR {
+                (None, Some(inner.Anonymous.bstrVal.to_string()))
+            } else {
+                (None, None)
+            }
+        };
+        unsafe {
+            let _ = VariantClear(&mut value);
+        }
+        Ok(out)
+    }
+
+    /// Строка из HKCU глазами службы WMI (StdRegProv.GetStringValue). `None` — значения нет.
+    pub fn read_hkcu_sz(sub: &str, name: &str) -> Result<Option<String>> {
+        unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.ok().context("COM")?;
+        let r = (|| -> Result<Option<String>> {
+            let locator: IWbemLocator = unsafe { CoCreateInstance(&WbemLocator, None, CLSCTX_INPROC_SERVER) }.context("WbemLocator")?;
+            let services: IWbemServices = unsafe {
+                locator.ConnectServer(&BSTR::from(r"ROOT\DEFAULT"), &BSTR::new(), &BSTR::new(), &BSTR::new(), 0, &BSTR::new(), None)
+            }
+            .context("WMI ROOT\\DEFAULT")?;
+            unsafe {
+                CoSetProxyBlanket(
+                    &services,
+                    RPC_C_AUTHN_WINNT,
+                    RPC_C_AUTHZ_NONE,
+                    PCWSTR::null(),
+                    RPC_C_AUTHN_LEVEL_CALL,
+                    RPC_C_IMP_LEVEL_IMPERSONATE,
+                    None,
+                    EOAC_NONE,
+                )
+            }
+            .context("WMI proxy")?;
+            let class_name = BSTR::from("StdRegProv");
+            let mut class = None;
+            unsafe { services.GetObject(&class_name, WBEM_FLAG_RETURN_WBEM_COMPLETE, None, Some(&mut class), None) }.context("StdRegProv")?;
+            let class = class.ok_or_else(|| anyhow!("StdRegProv"))?;
+            let mut signature = None;
+            unsafe { class.GetMethod(&HSTRING::from("GetStringValue"), 0, &mut signature, std::ptr::null_mut()) }.context("GetStringValue")?;
+            let params = unsafe { signature.ok_or_else(|| anyhow!("GetStringValue"))?.SpawnInstance(0) }?;
+            put(&params, "hDefKey", int(HKEY_CURRENT_USER))?;
+            put(&params, "sSubKeyName", text(sub))?;
+            put(&params, "sValueName", text(name))?;
+            let mut out = None;
+            unsafe {
+                services.ExecMethod(&class_name, &BSTR::from("GetStringValue"), WBEM_FLAG_RETURN_WBEM_COMPLETE, None, &params, Some(&mut out), None)
+            }
+            .context("StdRegProv.GetStringValue")?;
+            let out = out.ok_or_else(|| anyhow!("GetStringValue: no result"))?;
+            let (code, _) = get(&out, "ReturnValue")?;
+            if code != Some(0) {
+                return Ok(None); // 2 — нет такого ключа или значения
+            }
+            Ok(get(&out, "sValue")?.1)
+        })();
+        unsafe { CoUninitialize() };
+        r
+    }
+}
+
 /// Перезапустить себя вне такого приложения: ярлык с нашими аргументами открывает Проводник,
 /// а он запускает программу как обычную.
 pub fn relaunch_outside(args: &[String]) -> Result<()> {
@@ -445,5 +586,17 @@ pub fn round_corners(hwnd: isize) {
     unsafe {
         let pref = DWMWCP_ROUND;
         let _ = DwmSetWindowAttribute(HWND(hwnd as *mut _), DWMWA_WINDOW_CORNER_PREFERENCE, (&pref as *const windows::Win32::Graphics::Dwm::DWM_WINDOW_CORNER_PREFERENCE).cast(), std::mem::size_of_val(&pref) as u32);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Ручная проверка: `cargo test -p modly-setup registry_probe -- --ignored --nocapture`.
+    /// Из терминала внутри упакованного приложения — `Some(true)`, из обычного — `Some(false)`.
+    #[test]
+    #[ignore]
+    fn registry_probe() {
+        let started = std::time::Instant::now();
+        println!("registry_sandboxed = {:?}, parents = {} ({:?})", super::registry_sandboxed(), super::in_packaged_tree(), started.elapsed());
     }
 }

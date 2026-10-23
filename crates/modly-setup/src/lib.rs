@@ -67,10 +67,18 @@ pub fn has_flag(args: &[String], names: &[&str]) -> bool {
     args.iter().any(|a| names.iter().any(|n| a.eq_ignore_ascii_case(n)))
 }
 
-/// Запущены изнутри «упакованного» приложения (см. [`system::in_packaged_tree`]) — перезапуститься
-/// вне его, иначе записи в реестр пропадут в его песочнице. `true` — новая копия запущена, этой — выйти.
+/// Запущены внутри песочницы «упакованного» приложения — перезапуститься вне её, иначе записи в реестр
+/// пропадут в ней. Проверка по факту ([`system::registry_sandboxed`]), а если WMI не ответила — по
+/// родителям ([`system::in_packaged_tree`]). `true` — новая копия запущена, этой — выйти.
 pub fn escape_package_sandbox(args: &[String]) -> bool {
-    if has_flag(args, &["--outside"]) || system::sandbox().is_some() || !system::in_packaged_tree() {
+    if has_flag(args, &["--outside"]) || system::sandbox().is_some() {
+        return false;
+    }
+    let sandboxed = match system::registry_sandboxed() {
+        Some(s) => s,
+        None => system::in_packaged_tree(),
+    };
+    if !sandboxed {
         return false;
     }
     let mut again = args.to_vec();
