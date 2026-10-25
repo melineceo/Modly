@@ -95,6 +95,8 @@ export struct ModCard {
     build-text: string,
     // автору (режим разработчика): дописать сборку этой копии в modly.json
     can-add-build: bool,
+    // мод для взрослых (adult в modly.json)
+    adult: bool,
 }
 
 // Мод из каталога сайта mods.hackerstone.xyz.
@@ -119,6 +121,8 @@ export struct SiteCard {
     // у выпуска есть файлы: без пакета Modly их можно скачать в «ЗагрузкиModly»
     downloadable: bool,
     featured: bool,
+    // мод для взрослых (18+)
+    adult: bool,
     // none | installed | outdated | busy | downloaded (файл мода без пакета уже скачан)
     state: string,
     progress: float,
@@ -316,6 +320,13 @@ export global Store {
     // ссылка modly://install/<адрес> с сайта: спросить, ставить ли
     in-out property <bool> confirm-open;
     in-out property <SiteCard> confirm-mod;
+    // моды 18+: показывать ли (настройка), сколько скрыто в каталоге, окно «Вам есть 18?»
+    // (age-for-mod — его открыла ссылка на мод 18+, age-mod — этот мод)
+    in-out property <bool> show-adult;
+    in-out property <int> catalog-adult-hidden;
+    in-out property <bool> age-open;
+    in-out property <bool> age-for-mod;
+    in-out property <SiteCard> age-mod;
 
     in-out property <[Toast]> toasts;
 
@@ -393,6 +404,10 @@ export global Store {
     callback account-logout();
     callback confirm-install();
     callback confirm-cancel();
+    // включить показ 18+ — только через окно «Вам есть 18?», выключить — сразу
+    callback set-show-adult(bool);
+    callback age-confirm();
+    callback age-cancel();
 
     callback update-check();
     callback update-install();

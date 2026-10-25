@@ -1,7 +1,7 @@
 import { Theme, Lang } from "theme.slint";
 import { Icons } from "icons.slint";
 import { Store, GameCard, ModCard, SiteCard, OptionItem, PresetItem, LiveControl, LiveSection, LivePage, SessionTab, Toast, LogLine, MapCard, MapPin, MapCat, MapRow, MapActionItem } from "store.slint";
-import { Icon, IconBtn, Btn } from "widgets.slint";
+import { Icon, IconBtn, Btn, AdultBadge } from "widgets.slint";
 import { Sidebar } from "sidebar.slint";
 import { HomePage, GamePage, ModsPage, CatalogPage, DevPage, SettingsPage, ModLogo } from "pages.slint";
 import { MapPage } from "map.slint";
@@ -40,12 +40,21 @@ component ConfirmInstall inherits Rectangle {
                 VerticalLayout {
                     alignment: center;
                     spacing: 3px;
-                    Text {
-                        text: Store.confirm-mod.title;
-                        color: Theme.text;
-                        font-size: 18px;
-                        font-weight: 800;
-                        overflow: elide;
+                    // значок 18+ — сразу за названием
+                    HorizontalLayout {
+                        alignment: start;
+                        spacing: 8px;
+                        Text {
+                            text: Store.confirm-mod.title;
+                            color: Theme.text;
+                            font-size: 18px;
+                            font-weight: 800;
+                            overflow: elide;
+                        }
+                        if Store.confirm-mod.adult: VerticalLayout {
+                            alignment: center;
+                            AdultBadge { }
+                        }
                     }
                     Text {
                         text: Store.confirm-mod.game + (Store.confirm-mod.version != "" ? "  ·  v" + Store.confirm-mod.version : "");
@@ -93,6 +102,166 @@ component ConfirmInstall inherits Rectangle {
                         Store.confirm-install();
                     }
                 }
+            }
+        }
+    }
+}
+
+// «Вам есть 18?» — перед показом модов 18+: включение в настройках, кнопка «18+» в каталоге или
+// ссылка modly:// на мод 18+. Только после «Мне есть 18» Modly запрашивает такие моды у сайта.
+component AgeGate inherits Rectangle {
+    background: #05060ad6;
+    TouchArea { }
+    card := Rectangle {
+        width: 448px;
+        height: box.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 24px;
+        background: @linear-gradient(180deg, #1d0f1d 0%, #0d0c13 100%);
+        border-width: 1px;
+        border-color: #ff3d7866;
+        drop-shadow-blur: 70px;
+        drop-shadow-color: #ff3d7840;
+        clip: true;
+        // сияние сверху
+        Rectangle {
+            width: 520px;
+            height: 520px;
+            x: (parent.width - self.width) / 2;
+            y: -340px;
+            background: @radial-gradient(circle, #ff3d7848 0%, #ff3d7800 50%);
+        }
+        box := VerticalLayout {
+            padding: 30px;
+            padding-top: 32px;
+            spacing: 12px;
+            HorizontalLayout {
+                alignment: center;
+                // кольцо: программный рендерер скругляет только сплошную заливку — поэтому без градиента
+                Rectangle {
+                    width: 100px;
+                    height: 100px;
+                    border-radius: 50px;
+                    background: #ff3d7a;
+                    drop-shadow-blur: 36px;
+                    drop-shadow-color: #ff3d78b0;
+                    Rectangle {
+                        x: 5px;
+                        y: 5px;
+                        width: parent.width - 10px;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: #170b17;
+                        Text {
+                            text: "18+";
+                            color: #ffffff;
+                            font-size: 34px;
+                            font-weight: 900;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                height: 4px;
+            }
+            Text {
+                text: Lang.t("ТОЛЬКО ДЛЯ ВЗРОСЛЫХ", "ADULTS ONLY");
+                color: #ff9ab5;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 2.4px;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: Store.age-for-mod ? Store.age-mod.title + Lang.t(" — мод 18+", " is an 18+ mod") : Lang.t("Моды для взрослых", "Adult mods");
+                color: Theme.text;
+                font-size: 22px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            Text {
+                text: Lang.t("В модах с отметкой 18+ есть контент для взрослых. Смотреть и ставить их можно, только если вам уже исполнилось 18 лет.", "Mods marked 18+ contain adult content. You may view and install them only if you are 18 or older.");
+                color: Theme.text-2;
+                font-size: 13px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            Rectangle {
+                height: 4px;
+            }
+            Rectangle {
+                height: 44px;
+                border-radius: 12px;
+                background: yes-ta.has-hover ? #ff5a8f : #ff3d7a;
+                drop-shadow-blur: yes-ta.has-hover ? 26px : 18px;
+                drop-shadow-color: #ff3d7880;
+                accessible-role: button;
+                accessible-label: Lang.t("Мне есть 18 — показать", "I am 18 or older — show");
+                accessible-action-default => {
+                    Store.age-confirm();
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon {
+                            source: Icons.check;
+                            size: 16px;
+                            tint: #ffffff;
+                        }
+                    }
+                    Text {
+                        text: Lang.t("Мне есть 18 — показать", "I am 18 or older — show");
+                        color: #ffffff;
+                        font-size: 14px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+                yes-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        Store.age-confirm();
+                    }
+                }
+            }
+            Rectangle {
+                height: 42px;
+                border-radius: 12px;
+                background: no-ta.has-hover ? #ffffff10 : transparent;
+                border-width: 1px;
+                border-color: Theme.border;
+                accessible-role: button;
+                accessible-label: Lang.t("Не сейчас", "Not now");
+                accessible-action-default => {
+                    Store.age-cancel();
+                }
+                Text {
+                    text: Lang.t("Не сейчас", "Not now");
+                    color: Theme.text-2;
+                    font-size: 13.5px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                no-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        Store.age-cancel();
+                    }
+                }
+            }
+            Text {
+                text: Lang.t("Выбор запомнится. Скрыть моды 18+ снова — в «Настройках» или кнопкой «18+» в каталоге.", "The choice is remembered. To hide 18+ mods again, use Settings or the 18+ button in the catalog.");
+                color: Theme.text-3;
+                font-size: 11.5px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
             }
         }
     }
@@ -183,6 +352,11 @@ export component AppWindow inherits Window {
     }
 
     if Store.confirm-open: ConfirmInstall {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Store.age-open: AgeGate {
         width: parent.width;
         height: parent.height;
     }

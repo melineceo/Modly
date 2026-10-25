@@ -51,6 +51,12 @@ pub struct CatalogState {
     login_cancel: Option<Arc<AtomicBool>>,
     /// Мод из ссылки modly://, которую ждёт подтверждение.
     confirm: Option<SiteMod>,
+    /// Мод 18+ из ссылки modly://: сначала «Вам есть 18?», потом — обычное подтверждение установки.
+    age_then: Option<SiteMod>,
+    /// Сколько модов 18+ каталог не показал (показ выключен в настройках).
+    adult_hidden: usize,
+    /// С какой настройкой 18+ запрошен каталог, который сейчас грузится.
+    adult_req: bool,
     model: Rc<VecModel<SiteCard>>,
     /// Моды каталога для открытой игры (на её странице).
     game_model: Rc<VecModel<SiteCard>>,
@@ -223,16 +229,25 @@ impl App {
         self.cat.art.retain(|_, a| !matches!(a, Art::Failed));
         self.catalog_state("loading", "");
         let token = self.cat.account.as_ref().map(|a| a.token.clone());
+        let adult = self.settings.show_adult;
+        self.cat.adult_req = adult;
         std::thread::spawn(move || {
-            let r = site::catalog(token.as_deref());
+            let r = site::catalog(token.as_deref(), adult);
             post(move |a| a.on_catalog(r));
         });
     }
 
-    fn on_catalog(&mut self, r: anyhow::Result<Vec<SiteMod>>) {
+    fn on_catalog(&mut self, r: anyhow::Result<site::Catalog>) {
         self.cat.loading = false;
+        // пока каталог грузился, показ 18+ переключили — загрузить заново, с новой настройкой
+        if r.is_ok() && self.cat.adult_req != self.settings.show_adult {
+            self.catalog_refresh();
+            return;
+        }
         match r {
-            Ok(mods) => {
+            Ok(site::Catalog { mods, adult_hidden }) => {
+                self.cat.adult_hidden = adult_hidden;
+                self.adult_to_ui();
                 // картинки модов, которых в каталоге больше нет (или у которых новый логотип), — забыть
                 let used: HashSet<&str> =
                     mods.iter().chain(&self.cat.confirm).flat_map(|m| [m.logo.as_str(), m.cover.as_str()]).collect();
@@ -341,6 +356,7 @@ impl App {
             modly,
             downloadable: latest.is_some_and(|l| l.download || l.modly),
             featured: m.featured,
+            adult: m.adult,
             state: state.into(),
             progress: self.cat.busy.get(&m.slug).copied().unwrap_or(0.0),
             owned: owned.is_some(),
@@ -415,7 +431,7 @@ impl App {
     /// Карточка мода `slug` показалась на экране (`near`) или ушла с него. Ушедшие карточки
     /// снимают свои картинки с очереди — при быстрой прокрутке не качается то, что уже не видно.
     pub(super) fn catalog_art(&mut self, slug: &str, near: bool) {
-        let Some(m) = self.cat.mods.iter().chain(&self.cat.confirm).find(|m| m.slug == slug) else { return };
+        let Some(m) = self.cat.mods.iter().chain(&self.cat.confirm).chain(&self.cat.age_then).find(|m| m.slug == slug) else { return };
         let keys = [(Kind::Logo, m.logo.clone()), (Kind::Cover, m.cover.clone())];
         for key in keys.into_iter().filter(|k| !k.1.is_empty()) {
             if near {
@@ -481,6 +497,12 @@ impl App {
             let card = self.site_card(&m);
             if let Some(ui) = self.ui() {
                 ui.global::<Store>().set_confirm_mod(card);
+            }
+        }
+        if let Some(m) = self.cat.age_then.clone().filter(|m| m.logo == url || m.cover == url) {
+            let card = self.site_card(&m);
+            if let Some(ui) = self.ui() {
+                ui.global::<Store>().set_age_mod(card);
             }
         }
     }
@@ -783,7 +805,11 @@ impl App {
                     let mut m = d.brief.clone();
                     // в карточке подтверждения — версия и пакет именно свежего одобренного выпуска
                     m.latest = d.package().map(|(rel, _)| site::Latest { version: rel.version.clone(), modly: true, download: true });
-                    a.ask_install(m);
+                    if m.adult && !a.settings.show_adult {
+                        a.age_ask(Some(m)); // мод 18+, а показ выключен — сначала спросить возраст
+                    } else {
+                        a.ask_install(m);
+                    }
                 }
                 Err(e) => {
                     let title = a.t("Мод не найден", "Mod not found");
@@ -824,6 +850,68 @@ impl App {
         self.cat.confirm = None;
         if let Some(ui) = self.ui() {
             ui.global::<Store>().set_confirm_open(false);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Моды 18+
+
+    pub(super) fn adult_to_ui(&self) {
+        if let Some(ui) = self.ui() {
+            let store = ui.global::<Store>();
+            store.set_show_adult(self.settings.show_adult);
+            store.set_catalog_adult_hidden(if self.settings.show_adult { 0 } else { self.cat.adult_hidden.min(i32::MAX as usize) as i32 });
+        }
+    }
+
+    /// Показ модов 18+ в настройках или кнопкой «18+» в каталоге. Включить — только через «Вам есть 18?».
+    pub(super) fn set_show_adult(&mut self, on: bool) {
+        if on == self.settings.show_adult {
+            return;
+        }
+        if on {
+            self.age_ask(None);
+            return;
+        }
+        self.settings.show_adult = false;
+        self.settings.save();
+        self.adult_to_ui();
+        self.catalog_refresh();
+    }
+
+    /// Окно «Вам есть 18?». `then` — мод 18+ из ссылки modly://: после «Да» спросить, ставить ли его.
+    fn age_ask(&mut self, then: Option<SiteMod>) {
+        let card = then.as_ref().map(|m| self.site_card(m));
+        if let Some(m) = then.as_ref().filter(|m| !m.logo.is_empty()) {
+            self.art_want((Kind::Logo, m.logo.clone()));
+        }
+        self.cat.age_then = then;
+        if let Some(ui) = self.ui() {
+            let store = ui.global::<Store>();
+            store.set_age_for_mod(card.is_some());
+            store.set_age_mod(card.unwrap_or_default());
+            store.set_age_open(true);
+        }
+        self.art_pump();
+    }
+
+    pub(super) fn age_confirm(&mut self) {
+        self.settings.show_adult = true;
+        self.settings.save();
+        if let Some(ui) = self.ui() {
+            ui.global::<Store>().set_age_open(false);
+        }
+        self.adult_to_ui();
+        self.catalog_refresh();
+        if let Some(m) = self.cat.age_then.take() {
+            self.ask_install(m);
+        }
+    }
+
+    pub(super) fn age_cancel(&mut self) {
+        self.cat.age_then = None;
+        if let Some(ui) = self.ui() {
+            ui.global::<Store>().set_age_open(false);
         }
     }
 }
@@ -874,4 +962,7 @@ pub(super) fn wire(s: &Store) {
     s.on_account_logout(|| with(|a| a.account_logout()));
     s.on_confirm_install(|| with(|a| a.confirm_install()));
     s.on_confirm_cancel(|| with(|a| a.confirm_cancel()));
+    s.on_set_show_adult(|v| with(move |a| a.set_show_adult(v)));
+    s.on_age_confirm(|| with(|a| a.age_confirm()));
+    s.on_age_cancel(|| with(|a| a.age_cancel()));
 }

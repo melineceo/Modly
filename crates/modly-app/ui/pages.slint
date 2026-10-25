@@ -2,7 +2,7 @@ import { ScrollView, AboutSlint } from "std-widgets.slint";
 import { Theme, Lang } from "theme.slint";
 import { Icons } from "icons.slint";
 import { Store, GameCard, ModCard, OptionItem, SiteCard } from "store.slint";
-import { Icon, IconTile, Btn, IconBtn, ConfirmBtn, Toggle, TextField, Segmented, Card, Badge, SectionTitle, EmptyState } from "widgets.slint";
+import { Icon, IconTile, Btn, IconBtn, ConfirmBtn, Toggle, TextField, Segmented, Card, Badge, AdultBadge, SectionTitle, EmptyState } from "widgets.slint";
 import { LivePanel } from "live.slint";
 import { MapsCard } from "map.slint";
 
@@ -400,12 +400,22 @@ export component ModTile inherits Card {
                 alignment: center;
                 horizontal-stretch: 1;
                 spacing: 2px;
-                Text {
-                    text: root.m.name;
-                    color: Theme.text;
-                    font-size: 15px;
-                    font-weight: 700;
-                    overflow: elide;
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: 8px;
+                    Text {
+                        text: root.m.name;
+                        color: Theme.text;
+                        font-size: 15px;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+                    if root.m.adult: VerticalLayout {
+                        alignment: center;
+                        AdultBadge {
+                            font-size: 11px;
+                        }
+                    }
                 }
                 Text {
                     text: (root.m.version != "" ? "v" + root.m.version : "") + (root.m.author != "" ? "  ·  " + root.m.author : "") + (root.show-game ? "  ·  " + root.m.game-name : "");
@@ -1173,6 +1183,12 @@ component SiteTile inherits Rectangle {
         animate border-color { duration: 160ms; }
     }
 
+    // мод для взрослых — в левом углу обложки
+    if root.m.adult: AdultBadge {
+        x: 12px;
+        y: 12px;
+    }
+
     // установлен / есть обновление / от hackerstone — в углу обложки, на тёмной подложке
     if root.badge != "": Rectangle {
         x: parent.width - self.width - 12px;
@@ -1442,6 +1458,44 @@ component AccountChip inherits HorizontalLayout {
     }
 }
 
+// «18+» в шапке каталога: моды для взрослых скрыты (показать — через «Вам есть 18?») или показаны (скрыть).
+component AdultChip inherits Rectangle {
+    height: 38px;
+    width: row.preferred-width;
+    border-radius: 19px;
+    background: Store.show-adult ? #ff3d7824 : ta.has-hover ? Theme.surface-3 : Theme.surface-2;
+    border-width: 1px;
+    border-color: Store.show-adult ? #ff3d788c : ta.has-hover ? #ff3d7899 : Theme.border;
+    animate background, border-color { duration: 140ms; }
+    accessible-role: button;
+    accessible-label: Store.show-adult ? Lang.t("Моды 18+ показаны — скрыть", "18+ mods are shown — hide them") : Lang.t("Моды 18+ скрыты — показать", "18+ mods are hidden — show them");
+    accessible-action-default => {
+        Store.set-show-adult(!Store.show-adult);
+    }
+    row := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 14px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            AdultBadge { }
+        }
+        Text {
+            text: Store.show-adult ? Lang.t("показаны", "shown") : Lang.t("скрыто: ", "hidden: ") + Store.catalog-adult-hidden;
+            color: Store.show-adult ? Theme.text : Theme.text-2;
+            font-size: 12.5px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            Store.set-show-adult(!Store.show-adult);
+        }
+    }
+}
+
 export component CatalogPage inherits Rectangle {
     property <length> tile-w: 300px;
     property <length> tile-h: 266px;
@@ -1469,6 +1523,10 @@ export component CatalogPage inherits Rectangle {
                             Store.catalog-search-changed(t);
                         }
                     }
+                }
+                if Store.show-adult || Store.catalog-adult-hidden > 0: VerticalLayout {
+                    alignment: center;
+                    AdultChip { }
                 }
                 VerticalLayout {
                     alignment: center;
@@ -2112,6 +2170,25 @@ export component SettingsPage inherits Rectangle {
                                 enabled: Store.wemod-available;
                                 toggled(v) => {
                                     Store.set-wemod(v);
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    SettingRow {
+                        icon: Icons.lock;
+                        title: Lang.t("Моды 18+", "18+ mods");
+                        text: Lang.t("Показывать в каталоге моды для взрослых. Включается, только когда вы подтвердите, что вам уже есть 18. Без этого Modly их даже не скачивает из каталога.", "Show adult mods in the catalog. Turns on only after you confirm you are 18 or older. Until then Modly doesn't even fetch them from the catalog.");
+                        VerticalLayout {
+                            alignment: center;
+                            Toggle {
+                                label: Lang.t("Моды 18+", "18+ mods");
+                                checked: Store.show-adult;
+                                toggled(v) => {
+                                    Store.set-show-adult(v);
                                 }
                             }
                         }

@@ -3,6 +3,25 @@
 Формат: раздел `## <версия> — <дата>`, в нём `### Русский` и `### English`. Отсюда `cargo xtask dist`
 берёт текст выпуска на GitHub и в обновлении внутри Modly.
 
+## 0.2.5-beta — 2026-10-25
+
+### Русский
+- **Моды 18+.** Авторы теперь отмечают моды для взрослых на сайте, и Modly показывает такие моды, только если
+  в «Настройках» включить «Моды 18+» и подтвердить, что вам уже есть 18. До этого Modly даже не запрашивает их
+  у сайта.
+- В каталоге кнопка «18+» показывает, сколько таких модов скрыто, и включает или снова прячет их.
+- У модов для взрослых — значок «18+» на карточке каталога, в окне установки и в списке модов игры (поле `adult`
+  в `modly.json`).
+- Ссылка «Установить через Modly» на мод 18+ сначала спрашивает возраст.
+
+### English
+- **18+ mods.** Authors now mark adult mods on the site, and Modly shows them only if you turn on “18+ mods” in
+  Settings and confirm you are 18 or older. Until then Modly doesn't even request them from the site.
+- In the catalog, the “18+” button shows how many such mods are hidden and shows or hides them again.
+- Adult mods carry an “18+” badge on the catalog card, in the install dialog and in a game's mod list (the `adult`
+  field in `modly.json`).
+- An “Install with Modly” link to an 18+ mod asks for your age first.
+
 ## 0.2.4-beta — 2026-10-24
 
 ### Русский

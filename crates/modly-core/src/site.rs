@@ -133,6 +133,9 @@ pub struct SiteMod {
     pub comments: i64,
     #[serde(default)]
     pub featured: bool,
+    /// Мод для взрослых (18+): каталог отдаёт такие, только если о них попросили (`adult=1`).
+    #[serde(default)]
+    pub adult: bool,
     #[serde(default)]
     pub liked: bool,
     #[serde(default)]
@@ -255,20 +258,34 @@ pub(crate) fn api<T: DeserializeOwned>(path: &str, token: Option<&str>, body: Op
 #[derive(Deserialize)]
 struct CatalogResp {
     mods: Vec<SiteMod>,
+    /// Сколько модов 18+ сайт не отдал (их не просили).
+    #[serde(default)]
+    adult_hidden: usize,
 }
 
-/// Весь каталог (одобренные моды). С токеном — ещё и «мои лайки».
-pub fn catalog(token: Option<&str>) -> Result<Vec<SiteMod>> {
+/// Каталог сайта и сколько модов 18+ в нём скрыто.
+pub struct Catalog {
+    pub mods: Vec<SiteMod>,
+    pub adult_hidden: usize,
+}
+
+/// Весь каталог (одобренные моды). С токеном — ещё и «мои лайки». Моды 18+ — только с `adult`
+/// (человек включил их в настройках и подтвердил, что ему есть 18).
+pub fn catalog(token: Option<&str>, adult: bool) -> Result<Catalog> {
     let mut all = Vec::new();
+    let mut adult_hidden = 0;
     for page in 0..10 {
-        let r: CatalogResp = api(&format!("mods?page={page}"), token, None)?;
+        let r: CatalogResp = api(&format!("mods?page={page}{}", if adult { "&adult=1" } else { "" }), token, None)?;
+        if page == 0 {
+            adult_hidden = r.adult_hidden;
+        }
         let n = r.mods.len();
-        all.extend(r.mods.into_iter().filter(|m| slug_ok(&m.slug)));
+        all.extend(r.mods.into_iter().filter(|m| slug_ok(&m.slug) && (adult || !m.adult)));
         if n < 40 {
             break;
         }
     }
-    Ok(all)
+    Ok(Catalog { mods: all, adult_hidden })
 }
 
 #[derive(Deserialize)]

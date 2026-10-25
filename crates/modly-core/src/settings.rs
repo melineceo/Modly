@@ -39,6 +39,8 @@ pub struct Settings {
     pub hidden_games: Vec<String>,
     /// Какой версией поиска игр уже искали: новая версия поиска ищет ещё раз сама.
     pub scan_version: u32,
+    /// Показывать в каталоге моды 18+. Включается только после «Мне есть 18» в окне подтверждения.
+    pub show_adult: bool,
 }
 
 impl Settings {

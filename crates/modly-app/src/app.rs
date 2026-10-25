@@ -365,6 +365,7 @@ impl App {
         store.set_developer_mode(self.settings.developer_mode);
         store.set_gpu_rendering(self.settings.gpu_rendering);
         store.set_wemod(self.settings.wemod);
+        store.set_show_adult(self.settings.show_adult);
         store.set_remote(self.settings.remote);
         store.set_overlay_hotkey(match self.settings.overlay_hotkey.as_str() {
             "" => overlay::DEFAULT_KEY.into(),
@@ -640,6 +641,7 @@ impl App {
             build_state: build.state.into(),
             build_text: build.text.into(),
             can_add_build: build.can_add,
+            adult: m.adult,
         }
     }
 

@@ -364,6 +364,7 @@ mod tests {
             version: "1.0.1".into(),
             version_from: None,
             author: String::new(),
+            adult: false,
             description: None,
             links: Default::default(),
             game: GameDef { id: "ft".into(), name: "FT".into(), exe: "FamilyTime.exe".into(), ..Default::default() },

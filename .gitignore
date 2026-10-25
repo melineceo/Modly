@@ -8,6 +8,8 @@
 /mods/private/
 # Neighborly — закрытый мод для Hello Neighbor, тоже не выкладывать.
 /mods/neighborly/
+# Omega Plus — закрытый мод для My Dystopian Robot Girlfriend, не выкладывать.
+/mods/omega-plus/
 
 # Сборки C# и C++ примеров
 /sdk/**/bin/

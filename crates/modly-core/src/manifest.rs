@@ -20,6 +20,9 @@ pub struct ModManifest {
     pub version_from: Option<VersionFrom>,
     #[serde(default)]
     pub author: String,
+    /// Мод для взрослых (18+): в Modly — значок «18+» у мода.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub adult: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<Text>,
     /// Ссылки: `{"site": "...", "telegram": "...", "discord": "..."}`.
